@@ -94,9 +94,10 @@ enum ResolvedFormat: Equatable {
 
     init(_ format: ExportFormat, source: SourceAudioInfo) {
         let bits = source.isLossless ? source.bitDepth : 16
-        // FLAC supports 16/20/24 bit, ALAC 16/20/24/32 bit
-        let flacBits = bits <= 16 ? 16 : (bits == 20 ? 20 : 24)
-        let alacBits = [16, 20, 24, 32].contains(bits) ? bits : 16
+        // FLAC supports 16/20/24 bit, ALAC 16/20/24/32 bit. Other depths go to the nearest supported depth
+        // above them, or the highest one (e.g. 64-bit float becomes 24-bit FLAC / 32-bit ALAC).
+        let flacBits = [16, 20, 24].first { $0 >= bits } ?? 24
+        let alacBits = [16, 20, 24, 32].first { $0 >= bits } ?? 32
 
         switch format {
         case .sameAsSource:
@@ -159,30 +160,50 @@ extension AVAudioFile: AudioSink {
     func write(_ buffer: AVAudioPCMBuffer) throws { try write(from: buffer) }
 }
 
-/// AVAudioFile's FLAC / ALAC encoders ignore the requested bit depth and always write 24 bit,
-/// so ExtAudioFile is used to set mFormatFlags (the source bit depth) directly.
+/// Writes the formats AVAudioFile gets wrong, with an explicit stream description:
+/// - FLAC / ALAC: AVAudioFile's encoders ignore the requested bit depth and always write 24 bit, so
+///   mFormatFlags carries the source bit depth
+/// - 64-bit float WAV: AVAudioFile writes Float32 when asked for 64-bit float
 private final class ExtAudioFileWriter: AudioSink {
     private var ref: ExtAudioFileRef?
 
-    init(url: URL, format: ResolvedFormat, clientFormat: AVAudioFormat) throws {
-        let formatID: AudioFormatID
-        let fileType: AudioFileTypeID
-        let bits: Int
+    static func handles(_ format: ResolvedFormat) -> Bool {
         switch format {
-        case .flac(let b): (formatID, fileType, bits) = (kAudioFormatFLAC, kAudioFileFLACType, b)
-        case .alac(let b): (formatID, fileType, bits) = (kAudioFormatAppleLossless, kAudioFileM4AType, b)
-        default: preconditionFailure()
+        case .flac, .alac, .pcm(bits: 64, isFloat: true): true
+        default: false
         }
-        let flags: AudioFormatFlags = switch bits {
-        case 20: kAppleLosslessFormatFlag_20BitSourceData
-        case 24: kAppleLosslessFormatFlag_24BitSourceData
-        case 32: kAppleLosslessFormatFlag_32BitSourceData
-        default: kAppleLosslessFormatFlag_16BitSourceData
+    }
+
+    init(url: URL, format: ResolvedFormat, clientFormat: AVAudioFormat) throws {
+        let sampleRate = clientFormat.sampleRate
+        let channels = clientFormat.channelCount
+        let fileType: AudioFileTypeID
+        var asbd: AudioStreamBasicDescription
+        switch format {
+        case .flac(let bits), .alac(let bits):
+            let isFLAC = if case .flac = format { true } else { false }
+            fileType = isFLAC ? kAudioFileFLACType : kAudioFileM4AType
+            let flags: AudioFormatFlags = switch bits {
+            case 20: kAppleLosslessFormatFlag_20BitSourceData
+            case 24: kAppleLosslessFormatFlag_24BitSourceData
+            case 32: kAppleLosslessFormatFlag_32BitSourceData
+            default: kAppleLosslessFormatFlag_16BitSourceData
+            }
+            asbd = AudioStreamBasicDescription(
+                mSampleRate: sampleRate, mFormatID: isFLAC ? kAudioFormatFLAC : kAudioFormatAppleLossless,
+                mFormatFlags: flags, mBytesPerPacket: 0, mFramesPerPacket: 0, mBytesPerFrame: 0,
+                mChannelsPerFrame: channels, mBitsPerChannel: 0, mReserved: 0)
+        case .pcm(bits: 64, isFloat: true):
+            fileType = kAudioFileWAVEType
+            let bytesPerFrame = 8 * channels
+            asbd = AudioStreamBasicDescription(
+                mSampleRate: sampleRate, mFormatID: kAudioFormatLinearPCM,
+                mFormatFlags: kAudioFormatFlagIsFloat | kAudioFormatFlagIsPacked,
+                mBytesPerPacket: bytesPerFrame, mFramesPerPacket: 1, mBytesPerFrame: bytesPerFrame,
+                mChannelsPerFrame: channels, mBitsPerChannel: 64, mReserved: 0)
+        default:
+            preconditionFailure("\(format) is written with AVAudioFile")
         }
-        var asbd = AudioStreamBasicDescription(
-            mSampleRate: clientFormat.sampleRate, mFormatID: formatID, mFormatFlags: flags,
-            mBytesPerPacket: 0, mFramesPerPacket: 0, mBytesPerFrame: 0,
-            mChannelsPerFrame: clientFormat.channelCount, mBitsPerChannel: 0, mReserved: 0)
         try Self.check(ExtAudioFileCreateWithURL(url as CFURL, fileType, &asbd, clientFormat.channelLayout?.layout,
                                                  AudioFileFlags.eraseFile.rawValue, &ref))
         var client = clientFormat.streamDescription.pointee
@@ -290,7 +311,7 @@ public enum AudioExporter {
         let sampleRate = processing.sampleRate
         let output: AudioSink
         switch format {
-        case .flac, .alac:
+        case _ where ExtAudioFileWriter.handles(format):
             output = try ExtAudioFileWriter(url: url, format: format, clientFormat: processing)
         default:
             output = try AVAudioFile(

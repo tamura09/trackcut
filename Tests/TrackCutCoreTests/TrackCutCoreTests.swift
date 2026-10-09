@@ -283,3 +283,38 @@ func cancelledOverwriteKeepsTheExistingFile(format: ExportFormat, cancelAt: Canc
     }
     #expect(decoded == labels)
 }
+
+/// A 1-second stereo 64-bit float WAV. AVAudioFile cannot write one (it writes Float32 instead),
+/// so the file is assembled by hand.
+private func makeFloat64WAV(in dir: URL) throws -> URL {
+    let frames = 44_100, channels = 2, bytesPerSample = 8
+    var data = Data()
+    func le32(_ v: Int) { withUnsafeBytes(of: UInt32(v).littleEndian) { data.append(contentsOf: $0) } }
+    func le16(_ v: Int) { withUnsafeBytes(of: UInt16(v).littleEndian) { data.append(contentsOf: $0) } }
+    let dataSize = frames * channels * bytesPerSample
+    data.append(Data("RIFF".utf8)); le32(4 + 8 + 16 + 8 + dataSize); data.append(Data("WAVE".utf8))
+    data.append(Data("fmt ".utf8)); le32(16)
+    le16(3) // WAVE_FORMAT_IEEE_FLOAT
+    le16(channels); le32(44_100); le32(44_100 * channels * bytesPerSample)
+    le16(channels * bytesPerSample); le16(bytesPerSample * 8)
+    data.append(Data("data".utf8)); le32(dataSize)
+    for i in 0..<frames {
+        let v = 0.5 * sin(Double(i) * 2 * .pi * 440 / 44_100)
+        for _ in 0..<channels { withUnsafeBytes(of: v.bitPattern.littleEndian) { data.append(contentsOf: $0) } }
+    }
+    let url = dir.appendingPathComponent("float64.wav")
+    try data.write(to: url)
+    return url
+}
+
+/// Bit depths the lossless encoders do not support map to the nearest supported depth above them.
+@Test(arguments: [(ExportFormat.alac, 32), (.flac, 24), (.sameAsSource, 64)])
+func float64SourceKeepsTheHighestSupportedDepth(format: ExportFormat, expectedBits: Int) async throws {
+    let dir = try makeTempDir()
+    let url = try makeFloat64WAV(in: dir)
+    #expect(try SourceAudioInfo(url: url).bitDepth == 64)
+
+    let out = try await AudioExporter.export(
+        source: url, segments: [ExportSegment(start: 0, end: 1, fileBaseName: "out")], format: format, to: dir)[0]
+    #expect(try SourceAudioInfo(url: out).bitDepth == expectedBits)
+}
