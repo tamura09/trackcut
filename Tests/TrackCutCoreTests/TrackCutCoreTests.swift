@@ -146,3 +146,76 @@ func exportSegments(format: ExportFormat) async throws {
     #expect(TimeFormat.string(3723.5) == "1:02:03.50")
     #expect(TimeFormat.string(65, fractionDigits: 0) == "1:05")
 }
+
+@Test func exportRefusesToOverwriteTheSource() async throws {
+    let dir = try makeTempDir()
+    // The default APFS volume is case-insensitive, so "Song.wav" is the same file as "Song.WAV".
+    let source = dir.appendingPathComponent("Song.WAV")
+    try FileManager.default.moveItem(at: try makeTestWAV(in: dir), to: source)
+    let before = try Data(contentsOf: source)
+
+    await #expect(throws: AudioError.self) {
+        try await AudioExporter.export(
+            source: source, segments: [ExportSegment(start: 0, end: 4, fileBaseName: "Song")],
+            format: .wav, to: dir)
+    }
+    #expect(try Data(contentsOf: source) == before)
+}
+
+@Test func truncatedTagsDoNotCrash() async throws {
+    let dir = try makeTempDir()
+
+    // FLAC whose Vorbis comment block has a 2-byte body
+    var flac = Data("fLaC".utf8)
+    flac.append(contentsOf: [0x00, 0x00, 0x00, 34])
+    flac.append(Data(count: 34))
+    flac.append(contentsOf: [0x84, 0x00, 0x00, 2, 0, 0])
+    let flacURL = dir.appendingPathComponent("short.flac")
+    try flac.write(to: flacURL)
+    #expect(await TagReader.read(from: flacURL) == AudioTags())
+
+    // WAV ending in a LIST chunk that claims 100 bytes but has only 2
+    var wav = Data("RIFF".utf8)
+    wav.append(contentsOf: [14, 0, 0, 0])
+    wav.append(Data("WAVELIST".utf8))
+    wav.append(contentsOf: [100, 0, 0, 0])
+    wav.append(Data("IN".utf8))
+    let wavURL = dir.appendingPathComponent("short.wav")
+    try wav.write(to: wavURL)
+    #expect(await TagReader.read(from: wavURL) == AudioTags())
+}
+
+@Test(arguments: [ExportFormat.sameAsSource, .alac])
+func int32SourceKeepsEverySample(format: ExportFormat) async throws {
+    let dir = try makeTempDir()
+    let url = dir.appendingPathComponent("int32.wav")
+    let settings: [String: Any] = [
+        AVFormatIDKey: kAudioFormatLinearPCM, AVSampleRateKey: 44_100.0, AVNumberOfChannelsKey: 1,
+        AVLinearPCMBitDepthKey: 32, AVLinearPCMIsFloatKey: false, AVLinearPCMIsBigEndianKey: false,
+    ]
+    // Values a Float32 round trip cannot represent exactly
+    let samples: [Int32] = [0x4000_0001, -0x4000_0001, 0x7FFF_FFFF, 1, -1, 0x1234_5679]
+    do {
+        let file = try AVAudioFile(forWriting: url, settings: settings, commonFormat: .pcmFormatInt32, interleaved: false)
+        let buffer = AVAudioPCMBuffer(pcmFormat: file.processingFormat, frameCapacity: 44_100)!
+        buffer.frameLength = 44_100
+        for i in 0..<44_100 { buffer.int32ChannelData![0][i] = samples[i % samples.count] }
+        try file.write(from: buffer)
+        file.close()
+    }
+
+    let out = try await AudioExporter.export(
+        source: url, segments: [ExportSegment(start: 0, end: 1, fileBaseName: "out")], format: format, to: dir)[0]
+    let file = try AVAudioFile(forReading: out, commonFormat: .pcmFormatInt32, interleaved: false)
+    #expect(file.length == 44_100)
+    // Int32 reads can return fewer frames than requested, so read until the end.
+    let buffer = AVAudioPCMBuffer(pcmFormat: file.processingFormat, frameCapacity: 44_100)!
+    var read: [Int32] = []
+    while file.framePosition < file.length {
+        try file.read(into: buffer)
+        if buffer.frameLength == 0 { break }
+        read += (0..<Int(buffer.frameLength)).map { buffer.int32ChannelData![0][$0] }
+    }
+    #expect(read.count == 44_100)
+    #expect(read == (0..<44_100).map { samples[$0 % samples.count] })
+}

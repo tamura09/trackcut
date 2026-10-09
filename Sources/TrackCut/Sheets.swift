@@ -122,8 +122,8 @@ struct ExportSheet: View {
             let targets = try AudioExporter.outputURLs(source: source, segments: segments, format: format,
                                                        directory: directory)
             let existing = targets.filter { FileManager.default.fileExists(atPath: $0.path) }
-            if existing.contains(source) {
-                state.errorText = "書き出し先が元のファイルと同じになります。別のフォルダを選んでください。"
+            if let clash = existing.first(where: { FileIdentity.isSameFile($0, source) }) {
+                state.errorText = AudioError.outputIsSource(clash.lastPathComponent).localizedDescription
                 return
             }
             if !existing.isEmpty {

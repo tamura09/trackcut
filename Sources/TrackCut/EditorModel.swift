@@ -50,13 +50,15 @@ final class EditorModel: ObservableObject {
             errorMessage = "対応形式は FLAC / M4A / WAV です: \(url.lastPathComponent)"
             return
         }
-        loadTask?.cancel()
         do {
             try player.load(url)
         } catch {
             errorMessage = "開けませんでした: \(error.localizedDescription)"
             return
         }
+        // Only cancel the previous analysis once the new file has opened. Cancelling first would
+        // leave the window stuck on the progress view when the new file fails to open.
+        loadTask?.cancel()
         sourceURL = url
         peaks = nil
         tracks = []

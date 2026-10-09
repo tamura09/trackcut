@@ -215,6 +215,10 @@ public enum AudioExporter {
             throw AudioError.unsupportedSampleRateForAAC(info.sampleRate)
         }
         let urls = try outputURLs(source: source, segments: segments, format: format, directory: directory)
+        // Existing outputs are deleted before writing, so this has to be checked before anything is touched.
+        if let clash = urls.first(where: { FileIdentity.isSameFile($0, source) }) {
+            throw AudioError.outputIsSource(clash.lastPathComponent)
+        }
         let totalDuration = max(segments.reduce(0) { $0 + ($1.end - $1.start) }, 0.001)
         var doneDuration = 0.0
 
@@ -249,7 +253,14 @@ public enum AudioExporter {
 
     private static func transcode(source: URL, segment: ExportSegment, format: ResolvedFormat, to url: URL,
                                   progress: (Double) -> Void) throws {
-        let input = try AVAudioFile(forReading: source)
+        // The default processing format is Float32, whose 24-bit mantissa rounds 32-bit integer samples.
+        // Read those (and 64-bit float) in a format that holds them exactly.
+        let commonFormat: AVAudioCommonFormat = switch format {
+        case .pcm(bits: 32, isFloat: false), .alac(bits: 32): .pcmFormatInt32
+        case .pcm(bits: 64, isFloat: true): .pcmFormatFloat64
+        default: .pcmFormatFloat32
+        }
+        let input = try AVAudioFile(forReading: source, commonFormat: commonFormat, interleaved: false)
         let processing = input.processingFormat
         let sampleRate = processing.sampleRate
         let output: AudioSink

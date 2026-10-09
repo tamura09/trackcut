@@ -9,9 +9,10 @@ final class PlayerModel: ObservableObject {
     private var player: AVAudioPlayer?
     private var timer: Timer?
 
+    /// Leaves the current player untouched if the new file cannot be opened.
     func load(_ url: URL) throws {
-        stop()
         let player = try AVAudioPlayer(contentsOf: url)
+        stop()
         player.prepareToPlay()
         self.player = player
         currentTime = 0

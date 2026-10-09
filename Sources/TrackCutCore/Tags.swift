@@ -160,6 +160,7 @@ enum FLACTags {
         var tags = AudioTags()
         guard let block = try parse(data).blocks.first(where: { $0.type == vorbisCommentType }) else { return tags }
         let body = block.body
+        guard body.count >= 4 else { return tags }
         var offset = 4 + body.le32(at: 0)
         guard offset + 4 <= body.count else { return tags }
         let count = body.le32(at: offset)
@@ -286,8 +287,9 @@ enum WAVTags {
             guard let chunkHeader = try handle.read(upToCount: 8), chunkHeader.count == 8 else { break }
             let id = chunkHeader.ascii(at: 0, count: 4)
             let size = chunkHeader.le32(at: 4)
+            // read(upToCount:) returns less than size when the file is truncated.
             if id == "LIST", size >= 4, size < 1 << 20, let body = try handle.read(upToCount: size),
-               body.ascii(at: 0, count: 4) == "INFO" {
+               body.count >= 4, body.ascii(at: 0, count: 4) == "INFO" {
                 var p = 4
                 while p + 8 <= body.count {
                     let subID = body.ascii(at: p, count: 4)

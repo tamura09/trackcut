@@ -106,6 +106,7 @@ public enum AudioError: LocalizedError {
     case unsupportedFormat
     case unsupportedSampleRateForAAC(Double)
     case exportSessionUnavailable
+    case outputIsSource(String)
 
     public var errorDescription: String? {
         switch self {
@@ -113,6 +114,7 @@ public enum AudioError: LocalizedError {
         case .unsupportedFormat: "このオーディオ形式には対応していません。"
         case .unsupportedSampleRateForAAC(let rate): "AAC は \(Int(rate)) Hz に対応していません（48 kHz 以下のみ）。"
         case .exportSessionUnavailable: "書き出しセッションを作成できませんでした。"
+        case .outputIsSource(let name): "書き出し先「\(name)」が元のファイルと同じです。別のフォルダを選んでください。"
         }
     }
 }

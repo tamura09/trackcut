@@ -34,6 +34,18 @@ public enum TimeFormat {
     }
 }
 
+public enum FileIdentity {
+    /// Whether two URLs point to the same file on disk. Unlike comparing URLs, this sees through
+    /// case-insensitive volumes, Unicode normalization and symbolic links. False if either file is missing.
+    public static func isSameFile(_ a: URL, _ b: URL) -> Bool {
+        let key: Set<URLResourceKey> = [.fileResourceIdentifierKey]
+        guard let idA = try? a.resourceValues(forKeys: key).fileResourceIdentifier,
+              let idB = try? b.resourceValues(forKeys: key).fileResourceIdentifier
+        else { return false }
+        return idA.isEqual(idB)
+    }
+}
+
 public enum FileNameSanitizer {
     public static func sanitize(_ name: String) -> String {
         var result = name
