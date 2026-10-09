@@ -21,12 +21,18 @@ public struct Track: Identifiable, Hashable, Sendable {
 public enum TimeFormat {
     /// e.g. 3:05.42 / 1:02:03.50
     public static func string(_ seconds: Double, fractionDigits: Int = 2) -> String {
-        let t = max(0, seconds)
-        let hours = Int(t) / 3600
-        let minutes = (Int(t) % 3600) / 60
-        let secs = t - Double(hours * 3600 + minutes * 60)
-        let width = fractionDigits > 0 ? fractionDigits + 3 : 2
-        let secString = String(format: "%0\(width).\(fractionDigits)f", secs)
+        // Round the whole value first and split it with integers, so that rounding up
+        // (59.996 -> 60.00) carries into the minutes and hours instead of showing 0:60.00.
+        var scale = 1
+        for _ in 0..<fractionDigits { scale *= 10 }
+        let units = Int((max(0, seconds) * Double(scale)).rounded())
+        let totalSeconds = units / scale
+        let hours = totalSeconds / 3600
+        let minutes = totalSeconds % 3600 / 60
+        var secString = String(format: "%02d", totalSeconds % 60)
+        if fractionDigits > 0 {
+            secString += "." + String(format: "%0\(fractionDigits)d", units % scale)
+        }
         if hours > 0 {
             return String(format: "%d:%02d:", hours, minutes) + secString
         }

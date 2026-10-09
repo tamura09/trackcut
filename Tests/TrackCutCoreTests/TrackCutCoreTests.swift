@@ -145,6 +145,11 @@ func exportSegments(format: ExportFormat) async throws {
     #expect(TimeFormat.string(185.42) == "3:05.42")
     #expect(TimeFormat.string(3723.5) == "1:02:03.50")
     #expect(TimeFormat.string(65, fractionDigits: 0) == "1:05")
+    // Rounding up carries into the minutes and hours
+    #expect(TimeFormat.string(59.996) == "1:00.00")
+    #expect(TimeFormat.string(3599.996) == "1:00:00.00")
+    #expect(TimeFormat.string(59.6, fractionDigits: 0) == "1:00")
+    #expect(TimeFormat.string(119.96, fractionDigits: 1) == "2:00.0")
 }
 
 @Test func exportRefusesToOverwriteTheSource() async throws {

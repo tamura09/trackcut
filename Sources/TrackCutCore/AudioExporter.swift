@@ -225,7 +225,8 @@ public enum AudioExporter {
             throw AudioError.unsupportedSampleRateForAAC(info.sampleRate)
         }
         let urls = try outputURLs(source: source, segments: segments, format: format, directory: directory)
-        // Existing outputs are deleted before writing, so this has to be checked before anything is touched.
+        // An existing output is replaced once its new file is complete. If that output were the source,
+        // the replace would destroy it, so refuse before anything is written.
         if let clash = urls.first(where: { FileIdentity.isSameFile($0, source) }) {
             throw AudioError.outputIsSource(clash.lastPathComponent)
         }
