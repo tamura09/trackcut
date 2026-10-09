@@ -21,9 +21,13 @@ jobs:
     # Not after the merge: a change reaches main through a PR that has already
     # run this check, so repeating it would bill the same macOS minutes twice.
     if: ${{ github.event_name == 'pull_request' || github.ref != 'refs/heads/main' }}
-    # Uses the runner's default Xcode. Pinning one would break the job as soon
+    # macOS 27 with Xcode 27, the same generation the app is developed on. The
+    # image is labelled by its Xcode version rather than macos-27, and is still
+    # a public preview, so expect occasional queueing.
+    #
+    # Uses the image's default Xcode. Pinning one would break the job as soon
     # as the image drops that version, and Renovate does not track it.
-    runs-on: macos-26
+    runs-on: xcode-27
     timeout-minutes: 30
     defaults:
       run:
