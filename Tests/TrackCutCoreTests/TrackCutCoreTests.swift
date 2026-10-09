@@ -220,8 +220,16 @@ func int32SourceKeepsEverySample(format: ExportFormat) async throws {
     #expect(read == (0..<44_100).map { samples[$0 % samples.count] })
 }
 
-@Test(arguments: [ExportFormat.wav, .flac, .aac])
-func cancelledOverwriteKeepsTheExistingFile(format: ExportFormat) async throws {
+/// When an export is cancelled
+enum CancelPoint: CaseIterable, Sendable {
+    /// after the first chunk of audio is written
+    case firstChunk
+    /// after all audio is written, while the tags are being written
+    case afterAudio
+}
+
+@Test(arguments: [ExportFormat.wav, .flac, .aac], CancelPoint.allCases)
+func cancelledOverwriteKeepsTheExistingFile(format: ExportFormat, cancelAt: CancelPoint) async throws {
     let dir = try makeTempDir()
     let source = try makeTestWAV(in: dir)
     let outDir = dir.appendingPathComponent("out")
@@ -232,10 +240,13 @@ func cancelledOverwriteKeepsTheExistingFile(format: ExportFormat) async throws {
     let previous = Data("previous export".utf8)
     try previous.write(to: existing)
 
-    // Cancel from the first progress report, which comes after the first chunk has been written.
+    // The first progress report comes after the first chunk is written, and the one at 100% after the
+    // last, right before the tags are written.
     let task = Task {
-        try await AudioExporter.export(source: source, segments: segments, format: format, to: outDir) { _ in
-            withUnsafeCurrentTask { $0?.cancel() }
+        try await AudioExporter.export(source: source, segments: segments, format: format, to: outDir) { p in
+            if cancelAt == .firstChunk || p >= 1 {
+                withUnsafeCurrentTask { $0?.cancel() }
+            }
         }
     }
     await #expect(throws: CancellationError.self) { try await task.value }

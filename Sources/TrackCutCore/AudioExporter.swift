@@ -252,6 +252,9 @@ public enum AudioExporter {
                         try await TagWriter.write(tags, to: temp)
                     }
                 }
+                // Writing the tags does not check for cancellation, so check once more before touching the
+                // existing file.
+                try Task.checkCancellation()
                 if FileManager.default.fileExists(atPath: url.path) {
                     _ = try FileManager.default.replaceItemAt(url, withItemAt: temp)
                 } else {
