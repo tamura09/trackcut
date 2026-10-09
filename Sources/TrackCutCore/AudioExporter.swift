@@ -150,9 +150,11 @@ enum ResolvedFormat: Equatable {
 /// Common interface for output files
 private protocol AudioSink {
     func write(_ buffer: AVAudioPCMBuffer) throws
-    func close()
+    /// Finishes the file. Throws if it could not be completed.
+    func close() throws
 }
 
+// AVAudioFile.close() reports no errors, so it satisfies close() throws as is.
 extension AVAudioFile: AudioSink {
     func write(_ buffer: AVAudioPCMBuffer) throws { try write(from: buffer) }
 }
@@ -193,12 +195,15 @@ private final class ExtAudioFileWriter: AudioSink {
         try Self.check(ExtAudioFileWrite(ref, buffer.frameLength, buffer.audioBufferList))
     }
 
-    func close() {
-        if let ref { ExtAudioFileDispose(ref) }
-        ref = nil
+    /// ExtAudioFileDispose flushes the last packets and the file header, so its result decides whether
+    /// the file is complete.
+    func close() throws {
+        guard let ref else { return }
+        self.ref = nil
+        try Self.check(ExtAudioFileDispose(ref))
     }
 
-    deinit { close() }
+    deinit { try? close() }
 
     private static func check(_ status: OSStatus) throws {
         if status != noErr { throw NSError(domain: NSOSStatusErrorDomain, code: Int(status)) }
@@ -295,7 +300,10 @@ public enum AudioExporter {
                 commonFormat: processing.commonFormat,
                 interleaved: processing.isInterleaved)
         }
-        defer { output.close() }
+        // Close explicitly once everything is written so that an error while finishing the file fails the
+        // export. The defer only cleans up after an earlier error.
+        var isClosed = false
+        defer { if !isClosed { try? output.close() } }
 
         let startFrame = max(0, AVAudioFramePosition((segment.start * sampleRate).rounded()))
         let endFrame = min(input.length, AVAudioFramePosition((segment.end * sampleRate).rounded()))
@@ -316,6 +324,8 @@ public enum AudioExporter {
             remaining -= Int64(buffer.frameLength)
             progress(Double(total - remaining) / Double(total))
         }
+        isClosed = true
+        try output.close()
     }
 
     private static func exportPassthrough(source: URL, segment: ExportSegment, sampleRate: Double,
