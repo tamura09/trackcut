@@ -132,9 +132,18 @@ enum ResolvedFormat: Equatable {
             preconditionFailure("FLAC / ALAC は ExtAudioFileWriter で書き出す")
         }
         if channels > 2, let layout {
-            s[AVChannelLayoutKey] = Data(bytes: layout.layout, count: MemoryLayout<AudioChannelLayout>.size)
+            s[AVChannelLayoutKey] = Self.channelLayoutData(layout)
         }
         return s
+    }
+
+    /// AudioChannelLayout ends in a variable-length array of channel descriptions, so copying
+    /// MemoryLayout<AudioChannelLayout>.size would keep only the first one.
+    static func channelLayoutData(_ layout: AVAudioChannelLayout) -> Data {
+        let count = Int(layout.layout.pointee.mNumberChannelDescriptions)
+        let size = MemoryLayout<AudioChannelLayout>.offset(of: \.mChannelDescriptions)!
+            + max(count, 1) * MemoryLayout<AudioChannelDescription>.stride
+        return Data(bytes: layout.layout, count: size)
     }
 }
 
@@ -206,7 +215,8 @@ public enum AudioExporter {
         }
     }
 
-    /// Writes each segment to its own file. Existing files with the same name are overwritten.
+    /// Writes each segment to its own file. An existing file with the same name is replaced only once
+    /// the new one is complete.
     public static func export(source: URL, segments: [ExportSegment], format: ExportFormat, to directory: URL,
                               progress: @escaping @Sendable (Double) -> Void = { _ in }) async throws -> [URL] {
         let info = try SourceAudioInfo(url: source)
@@ -224,9 +234,10 @@ public enum AudioExporter {
 
         for (segment, url) in zip(segments, urls) {
             try Task.checkCancellation()
-            if FileManager.default.fileExists(atPath: url.path) {
-                try FileManager.default.removeItem(at: url)
-            }
+            // Write to a hidden file next to the output and move it into place only once it is complete,
+            // so a cancelled or failed export leaves an existing file untouched.
+            let temp = directory.appendingPathComponent(".trackcut-\(UUID().uuidString)")
+                .appendingPathExtension(url.pathExtension)
             let base = doneDuration
             let segmentDuration = segment.end - segment.start
             let report: @Sendable (Double) -> Void = { fraction in
@@ -234,15 +245,20 @@ public enum AudioExporter {
             }
             do {
                 if resolved == .aacPassthrough {
-                    try await exportPassthrough(source: source, segment: segment, sampleRate: info.sampleRate, to: url)
+                    try await exportPassthrough(source: source, segment: segment, sampleRate: info.sampleRate, to: temp)
                 } else {
-                    try transcode(source: source, segment: segment, format: resolved, to: url, progress: report)
+                    try transcode(source: source, segment: segment, format: resolved, to: temp, progress: report)
                     if let tags = segment.tags {
-                        try await TagWriter.write(tags, to: url)
+                        try await TagWriter.write(tags, to: temp)
                     }
                 }
+                if FileManager.default.fileExists(atPath: url.path) {
+                    _ = try FileManager.default.replaceItemAt(url, withItemAt: temp)
+                } else {
+                    try FileManager.default.moveItem(at: temp, to: url)
+                }
             } catch {
-                try? FileManager.default.removeItem(at: url)
+                try? FileManager.default.removeItem(at: temp)
                 throw error
             }
             doneDuration += segmentDuration

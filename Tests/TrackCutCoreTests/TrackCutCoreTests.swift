@@ -219,3 +219,51 @@ func int32SourceKeepsEverySample(format: ExportFormat) async throws {
     #expect(read.count == 44_100)
     #expect(read == (0..<44_100).map { samples[$0 % samples.count] })
 }
+
+@Test(arguments: [ExportFormat.wav, .flac, .aac])
+func cancelledOverwriteKeepsTheExistingFile(format: ExportFormat) async throws {
+    let dir = try makeTempDir()
+    let source = try makeTestWAV(in: dir)
+    let outDir = dir.appendingPathComponent("out")
+    try FileManager.default.createDirectory(at: outDir, withIntermediateDirectories: true)
+    let segments = [ExportSegment(start: 0, end: 13, fileBaseName: "01 All", tags: tags(1))]
+    let existing = try AudioExporter.outputURLs(source: source, segments: segments, format: format,
+                                                directory: outDir)[0]
+    let previous = Data("previous export".utf8)
+    try previous.write(to: existing)
+
+    // Cancel from the first progress report, which comes after the first chunk has been written.
+    let task = Task {
+        try await AudioExporter.export(source: source, segments: segments, format: format, to: outDir) { _ in
+            withUnsafeCurrentTask { $0?.cancel() }
+        }
+    }
+    await #expect(throws: CancellationError.self) { try await task.value }
+
+    #expect(try Data(contentsOf: existing) == previous)
+    #expect(try FileManager.default.contentsOfDirectory(atPath: outDir.path) == [existing.lastPathComponent])
+}
+
+@Test func channelLayoutDataKeepsEveryDescription() throws {
+    let count = 3
+    let descriptionsOffset = MemoryLayout<AudioChannelLayout>.offset(of: \.mChannelDescriptions)!
+    let size = descriptionsOffset + count * MemoryLayout<AudioChannelDescription>.stride
+    let raw = UnsafeMutableRawPointer.allocate(byteCount: size, alignment: MemoryLayout<AudioChannelLayout>.alignment)
+    defer { raw.deallocate() }
+    raw.initializeMemory(as: UInt8.self, repeating: 0, count: size)
+    let layout = raw.assumingMemoryBound(to: AudioChannelLayout.self)
+    layout.pointee.mChannelLayoutTag = kAudioChannelLayoutTag_UseChannelDescriptions
+    layout.pointee.mNumberChannelDescriptions = UInt32(count)
+    let labels = [kAudioChannelLabel_Left, kAudioChannelLabel_Right, kAudioChannelLabel_Center]
+    let descriptions = (raw + descriptionsOffset).assumingMemoryBound(to: AudioChannelDescription.self)
+    for i in 0..<count { descriptions[i].mChannelLabel = labels[i] }
+
+    let data = ResolvedFormat.channelLayoutData(AVAudioChannelLayout(layout: layout))
+    #expect(data.count == size)
+    let decoded: [AudioChannelLabel] = data.withUnsafeBytes { bytes in
+        guard bytes.count >= size else { return [] }
+        let base = (bytes.baseAddress! + descriptionsOffset).assumingMemoryBound(to: AudioChannelDescription.self)
+        return (0..<count).map { base[$0].mChannelLabel }
+    }
+    #expect(decoded == labels)
+}
