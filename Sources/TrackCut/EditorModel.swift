@@ -181,11 +181,12 @@ final class EditorModel: ObservableObject {
         tracks[i].start = min(max(time, lower), upper)
     }
 
-    /// Replaces all split points. Titles and artists are carried over by position.
+    /// Replaces all split points. Titles, artists and the export selection are carried over by position.
     func applySplits(_ times: [Double]) {
         let old = tracks
         tracks = ([0] + times.sorted()).enumerated().map { i, start in
-            Track(start: start, title: i < old.count ? old[i].title : "", artist: i < old.count ? old[i].artist : "")
+            guard i < old.count else { return Track(start: start) }
+            return Track(start: start, title: old[i].title, artist: old[i].artist, isEnabled: old[i].isEnabled)
         }
         selectedTrackID = tracks.first?.id
     }
