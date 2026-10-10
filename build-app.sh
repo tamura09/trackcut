@@ -3,7 +3,11 @@
 set -euo pipefail
 cd "$(dirname "$0")"
 
-swift build -c release
+# SwiftPM links with --sysroot only, so clang records the deployment target (15.0) as the SDK version.
+# AppKit picks the design from that version, and would give the app the pre-Liquid Glass look. Passing
+# -isysroot to the link step records the SDK's real version.
+SDK="$(xcrun --sdk macosx --show-sdk-path)"
+swift build -c release -Xswiftc -Xclang-linker -Xswiftc -isysroot -Xswiftc -Xclang-linker -Xswiftc "$SDK"
 BIN="$(swift build -c release --show-bin-path)/TrackCut"
 APP="build/TrackCut.app"
 
@@ -16,6 +20,7 @@ cat > "$APP/Contents/Info.plist" <<'PLIST'
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
+    <key>CFBundleDevelopmentRegion</key><string>ja</string>
     <key>CFBundleName</key><string>TrackCut</string>
     <key>CFBundleDisplayName</key><string>TrackCut</string>
     <key>CFBundleIdentifier</key><string>wtf.tmrh.TrackCut</string>

@@ -3,40 +3,34 @@ import SwiftUI
 
 struct ContentView: View {
     @ObservedObject var editor: EditorModel
-    @StateObject private var sheets = SheetState()
+    @ObservedObject private var sheets = SheetState.shared
+    @AppStorage("showsInspector") private var showsInspector = true
+
+    private var isLoaded: Bool { editor.peaks != nil }
 
     var body: some View {
         Group {
-            if editor.peaks != nil {
+            if isLoaded {
                 VSplitView {
-                    VStack(spacing: 0) {
-                        WaveformView(mode: .overview, editor: editor, player: editor.player)
-                            .frame(height: 44)
-                        WaveformView(mode: .detail, editor: editor, player: editor.player)
-                    }
-                    .frame(minHeight: 220, idealHeight: 360)
+                    WaveformPanel(editor: editor)
+                        .frame(minHeight: 260, idealHeight: 400)
                     TrackListView(editor: editor)
                         .frame(minHeight: 140, idealHeight: 240)
                 }
             } else if let progress = editor.loadingProgress {
-                VStack(spacing: 12) {
-                    ProgressView(value: progress).frame(width: 280)
-                    Text("波形を解析中…").foregroundStyle(.secondary)
-                }
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                LoadingView(fileName: editor.sourceURL?.lastPathComponent ?? "", progress: progress)
             } else {
-                VStack(spacing: 12) {
-                    Image(systemName: "waveform").font(.system(size: 48)).foregroundStyle(.tertiary)
-                    Text("FLAC / M4A / WAV ファイルをドロップ、または ⌘O で開く")
-                        .foregroundStyle(.secondary)
-                    Button("開く…") { editor.presentOpenPanel() }
-                }
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                EmptyStateView(isTargeted: sheets.isDropTargeted) { editor.presentOpenPanel() }
             }
         }
         .navigationTitle(editor.sourceURL?.lastPathComponent ?? "TrackCut")
+        .navigationSubtitle(subtitle)
         .toolbar { toolbar }
-        .onDrop(of: [.fileURL], isTargeted: nil) { providers in
+        .inspector(isPresented: Binding(get: { isLoaded && showsInspector }, set: { showsInspector = $0 })) {
+            InspectorView(editor: editor)
+                .inspectorColumnWidth(min: 260, ideal: 300, max: 420)
+        }
+        .onDrop(of: [.fileURL], isTargeted: $sheets.isDropTargeted) { providers in
             guard let provider = providers.first else { return false }
             _ = provider.loadObject(ofClass: URL.self) { url, _ in
                 guard let url else { return }
@@ -52,69 +46,132 @@ struct ContentView: View {
         }
         .sheet(isPresented: $sheets.showsSilence) { SilenceDetectionSheet(editor: editor) }
         .sheet(isPresented: $sheets.showsExport) { ExportSheet(editor: editor) }
+        .sheet(isPresented: $sheets.showsShortcuts) { ShortcutsSheet() }
+    }
+
+    private var subtitle: String {
+        guard isLoaded else { return "" }
+        let exported = editor.tracks.filter(\.isEnabled).count
+        let total = TimeFormat.string(editor.duration, fractionDigits: 0)
+        return exported == editor.tracks.count
+            ? "\(editor.tracks.count) トラック · \(total)"
+            : "\(editor.tracks.count) トラック（書き出し \(exported)）· \(total)"
     }
 
     @ToolbarContentBuilder
     private var toolbar: some ToolbarContent {
-        let loaded = editor.peaks != nil
-        ToolbarItemGroup(placement: .navigation) {
+        ToolbarItem(placement: .navigation) {
             Button { editor.presentOpenPanel() } label: { Label("開く", systemImage: "folder") }
                 .help("開く (⌘O)")
         }
-        ToolbarItemGroup {
-            PlaybackControls(player: editor.player).disabled(!loaded)
-            Button { editor.addSplit(at: editor.player.currentTime) } label: {
-                Label("分割", systemImage: "scissors")
-            }
-            .help("再生位置で分割 (M) — 波形のダブルクリックでも分割")
-            .disabled(!loaded)
-            Button { editor.removeSelectedSplit() } label: {
-                Label("分割点を削除", systemImage: "arrow.right.and.line.vertical.and.arrow.left")
-            }
-            .help("選択中トラックの先頭の分割点を削除 (Delete)")
-            .disabled(!editor.canRemoveSelectedSplit)
+        ToolbarItem(placement: .primaryAction) {
             Button { sheets.showsSilence = true } label: {
                 Label("無音検出", systemImage: "waveform.badge.magnifyingglass")
             }
-            .help("無音区間から分割点を自動検出")
-            .disabled(!loaded)
+            .help("無音区間から分割点を自動検出 (⇧⌘D)")
+            .disabled(!isLoaded)
         }
-        ToolbarItemGroup {
-            Button { editor.zoom(by: 0.5) } label: { Label("拡大", systemImage: "plus.magnifyingglass") }
-                .help("拡大 (⌘ + スクロール / ピンチでも可)")
-            Button { editor.zoom(by: 2) } label: { Label("縮小", systemImage: "minus.magnifyingglass") }
-                .help("縮小")
-            Button { editor.zoomToFit() } label: {
-                Label("全体", systemImage: "arrow.left.and.right.square")
-            }
-            .help("全体を表示")
-        }
-        ToolbarItemGroup {
+        ToolbarItem(placement: .primaryAction) {
             Button { sheets.showsExport = true } label: {
                 Label("書き出し", systemImage: "square.and.arrow.up")
             }
-            .help("曲ごとに書き出し")
-            .disabled(!loaded)
+            .help("曲ごとに書き出し (⌘E)")
+            .disabled(!isLoaded)
+        }
+        ToolbarItem(placement: .primaryAction) {
+            Button { showsInspector.toggle() } label: {
+                Label("インスペクタ", systemImage: "sidebar.trailing")
+            }
+            .help("インスペクタを表示 / 隠す (⌥⌘I)")
+            .disabled(!isLoaded)
         }
     }
 }
 
-/// The Command Line Tools SDK ships without the @State macro plugin, so view state lives in an ObservableObject
-private final class SheetState: ObservableObject {
+/// Sheet and drop state. Shared so that menu commands can open the sheets.
+final class SheetState: ObservableObject {
+    static let shared = SheetState()
+
     @Published var showsSilence = false
     @Published var showsExport = false
+    @Published var showsShortcuts = false
+    @Published var isDropTargeted = false
 }
 
-private struct PlaybackControls: View {
-    @ObservedObject var player: PlayerModel
+/// Overview, detail waveform and the floating transport controls
+private struct WaveformPanel: View {
+    @ObservedObject var editor: EditorModel
 
     var body: some View {
-        Button { player.toggle() } label: {
-            Label(player.isPlaying ? "一時停止" : "再生", systemImage: player.isPlaying ? "pause.fill" : "play.fill")
+        VStack(spacing: 8) {
+            WaveformView(mode: .overview, editor: editor, player: editor.player)
+                .frame(height: 40)
+                .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+                .overlay(RoundedRectangle(cornerRadius: 10, style: .continuous).strokeBorder(.separator))
+            WaveformView(mode: .detail, editor: editor, player: editor.player)
+                .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+                .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).strokeBorder(.separator))
+                .overlay(alignment: .bottom) {
+                    TransportBar(editor: editor, player: editor.player)
+                        .padding(.bottom, 12)
+                        .padding(.horizontal, 12)
+                }
         }
-        .help("再生 / 一時停止 (Space)")
-        Text(TimeFormat.string(player.currentTime))
-            .font(.system(.body, design: .monospaced))
-            .frame(minWidth: 90)
+        .padding(12)
+    }
+}
+
+private struct EmptyStateView: View {
+    var isTargeted: Bool
+    var open: () -> Void
+
+    var body: some View {
+        VStack(spacing: 20) {
+            Image(systemName: "waveform")
+                .font(.system(size: 44, weight: .medium))
+                .foregroundStyle(.tint)
+                .frame(width: 104, height: 104)
+                .glassSurface(in: RoundedRectangle(cornerRadius: 30, style: .continuous))
+            VStack(spacing: 6) {
+                Text("ファイルをドロップして開始")
+                    .font(.title2.weight(.semibold))
+                Text("FLAC / M4A / WAV に対応しています")
+                    .foregroundStyle(.secondary)
+            }
+            Button(action: open) {
+                Label("開く…", systemImage: "folder")
+                    .padding(.horizontal, 6)
+            }
+            .controlSize(.large)
+            .prominentButtonStyle()
+            .keyboardShortcut(.defaultAction)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background {
+            RoundedRectangle(cornerRadius: 28, style: .continuous)
+                .strokeBorder(style: StrokeStyle(lineWidth: 2, dash: [8, 6]))
+                .foregroundStyle(.tint)
+                .background(Color.accentColor.opacity(0.06), in: RoundedRectangle(cornerRadius: 28, style: .continuous))
+                .padding(20)
+                .opacity(isTargeted ? 1 : 0)
+                .animation(.easeOut(duration: 0.15), value: isTargeted)
+        }
+    }
+}
+
+private struct LoadingView: View {
+    var fileName: String
+    var progress: Double
+
+    var body: some View {
+        VStack(spacing: 14) {
+            Text("波形を解析中…").font(.headline)
+            ProgressView(value: progress).frame(width: 260)
+            Text(fileName).font(.callout).foregroundStyle(.secondary).lineLimit(1).truncationMode(.middle)
+        }
+        .padding(.horizontal, 28)
+        .padding(.vertical, 22)
+        .glassSurface(in: RoundedRectangle(cornerRadius: 24, style: .continuous))
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 }

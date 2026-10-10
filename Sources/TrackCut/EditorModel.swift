@@ -1,5 +1,6 @@
 import AppKit
 import Combine
+import SwiftUI
 import TrackCutCore
 import UniformTypeIdentifiers
 
@@ -23,6 +24,10 @@ final class EditorModel: ObservableObject {
     static let shared = EditorModel()
 
     let player = PlayerModel()
+    /// The editor window. Set by the detail waveform view.
+    weak var window: NSWindow?
+    /// The window's undo manager, which the Edit menu and ⌘Z use
+    var undoManager: UndoManager? { window?.undoManager }
     private var loadTask: Task<Void, Never>?
     /// Identifies the latest open(). Results from earlier loads are dropped by comparing against it;
     /// the URL is not enough because the same file can be opened again while it is still loading.
@@ -34,6 +39,11 @@ final class EditorModel: ObservableObject {
     private init() {
         player.$currentTime
             .sink { [weak self] t in MainActor.assumeIsolated { self?.followPlayhead(t) } }
+            .store(in: &cancellables)
+        // A text field has finished editing. Delivered on the next pass so the binding has its final value.
+        NotificationCenter.default.publisher(for: NSControl.textDidEndEditingNotification)
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] _ in MainActor.assumeIsolated { _ = self?.commitTextEdits() } }
             .store(in: &cancellables)
     }
 
@@ -62,6 +72,8 @@ final class EditorModel: ObservableObject {
         // Only cancel the previous analysis once the new file has opened. Cancelling first would
         // leave the window stuck on the progress view when the new file fails to open.
         loadTask?.cancel()
+        undoManager?.removeAllActions()
+        textEditOrigins = [:]
         let id = UUID()
         loadID = id
         sourceURL = url
@@ -117,6 +129,155 @@ final class EditorModel: ObservableObject {
         errorMessage = "波形を読み込めませんでした: \(error.localizedDescription)"
     }
 
+    // MARK: - Undo
+
+    /// The part of the state that undo restores
+    struct Snapshot {
+        var tracks: [Track]
+        var selectedTrackID: Track.ID?
+    }
+
+    var snapshot: Snapshot { Snapshot(tracks: tracks, selectedTrackID: selectedTrackID) }
+
+    /// Runs `change` as one undoable step
+    func performUndoable(_ actionName: String, _ change: () -> Void) {
+        let committedText = finishTextEditing()
+        let before = snapshot
+        change()
+        registerUndo(actionName, restoring: before, separateFromText: committedText)
+    }
+
+    /// Registers an undo step that goes back to `before`, if anything changed since. Used directly for
+    /// edits made over several events, such as dragging a split point. `separateFromText` keeps text edits
+    /// committed earlier in the same event out of this step: the undo manager groups everything
+    /// registered during one event into one step.
+    func registerUndo(_ actionName: String, restoring before: Snapshot, separateFromText: Bool = false) {
+        guard before.tracks != tracks, let undoManager else { return }
+        if separateFromText, undoManager.groupsByEvent, undoManager.groupingLevel == 1 {
+            undoManager.endUndoGrouping()
+            undoManager.beginUndoGrouping()
+        }
+        undoManager.registerUndo(withTarget: self) { model in
+            model.restore(before, actionName: actionName)
+        }
+        undoManager.setActionName(actionName)
+    }
+
+    private var continuousEditStart: Snapshot?
+
+    /// Starts an edit made over several events (a drag, a slider). endContinuousEdit registers it as one step.
+    func beginContinuousEdit() {
+        finishTextEditing()
+        continuousEditStart = snapshot
+    }
+
+    func endContinuousEdit(_ actionName: String) {
+        if let start = continuousEditStart { registerUndo(actionName, restoring: start) }
+        continuousEditStart = nil
+    }
+
+    private func restore(_ target: Snapshot, actionName: String) {
+        let current = snapshot
+        // Titles and artists have undo steps of their own (see setText), so an undo of a split leaves them
+        // as they are. The snapshot can hold names typed after it was taken but committed only later.
+        let names = Dictionary(uniqueKeysWithValues: current.tracks.map { ($0.id, ($0.title, $0.artist)) })
+        tracks = target.tracks.map { track in
+            var track = track
+            if let (title, artist) = names[track.id] {
+                track.title = title
+                track.artist = artist
+            }
+            return track
+        }
+        selectedTrackID = target.selectedTrackID
+        registerUndo(actionName, restoring: current)
+    }
+
+    // MARK: - Text
+
+    /// A text field's value in the model
+    enum TextTarget: Hashable {
+        case track(Track.ID, WritableKeyPath<Track, String>)
+        case album(WritableKeyPath<AudioTags, String>)
+
+        var actionName: String {
+            switch self {
+            case .track(_, \Track.title): "タイトルの変更"
+            case .track: "アーティストの変更"
+            case .album: "アルバム情報の変更"
+            }
+        }
+    }
+
+    /// Values from before the text edits in progress. Each becomes one undo step when its field ends
+    /// editing: the field editor's own undo is gone by then.
+    private var textEditOrigins: [TextTarget: String] = [:]
+
+    func text(_ target: TextTarget) -> String {
+        switch target {
+        case .track(let id, let keyPath): index(of: id).map { tracks[$0][keyPath: keyPath] } ?? ""
+        case .album(let keyPath): albumTags[keyPath: keyPath]
+        }
+    }
+
+    /// Sets a value as it is typed. See commitTextEdits for undo.
+    func setText(_ value: String, for target: TextTarget) {
+        if textEditOrigins[target] == nil { textEditOrigins[target] = text(target) }
+        assign(value, to: target)
+    }
+
+    func textBinding(_ target: TextTarget) -> Binding<String> {
+        Binding(get: { self.text(target) }, set: { self.setText($0, for: target) })
+    }
+
+    /// Registers the finished text edits for undo, one step per field. Called when a text field ends editing,
+    /// and before other edits. Returns whether anything was registered.
+    @discardableResult
+    func commitTextEdits() -> Bool {
+        let origins = textEditOrigins
+        textEditOrigins = [:]
+        var registered = false
+        for (target, original) in origins where text(target) != original {
+            registerTextUndo(target, restoring: original)
+            registered = true
+        }
+        return registered
+    }
+
+    /// Ends editing in the text field being typed into, if any, and registers its edit for undo. Run before
+    /// other edits: they may remove the track the text belongs to, and while the field is still editing,
+    /// ⌘Z would undo its typing instead of the registered steps. Returns whether anything was registered.
+    @discardableResult
+    private func finishTextEditing() -> Bool {
+        // Only with typed text pending, so that a text field committing its own value (the fade length)
+        // is not asked to end editing from inside its commit
+        guard !textEditOrigins.isEmpty else { return false }
+        if let window, window.firstResponder is NSText {
+            window.makeFirstResponder(nil)
+        }
+        return commitTextEdits()
+    }
+
+    /// Undo restores only this one value, so it stays correct whatever was undone around it
+    private func registerTextUndo(_ target: TextTarget, restoring value: String) {
+        guard let undoManager else { return }
+        undoManager.registerUndo(withTarget: self) { model in
+            let current = model.text(target)
+            model.assign(value, to: target)
+            model.registerTextUndo(target, restoring: current)
+        }
+        undoManager.setActionName(target.actionName)
+    }
+
+    private func assign(_ value: String, to target: TextTarget) {
+        switch target {
+        case .track(let id, let keyPath):
+            if let i = index(of: id) { tracks[i][keyPath: keyPath] = value }
+        case .album(let keyPath):
+            albumTags[keyPath: keyPath] = value
+        }
+    }
+
     // MARK: - Tracks
 
     func index(of id: Track.ID?) -> Int? {
@@ -148,8 +309,10 @@ final class EditorModel: ObservableObject {
         if let i = trackIndex(containing: time) { selectedTrackID = tracks[i].id }
     }
 
+    var selectedIndex: Int? { index(of: selectedTrackID) }
+
     var canRemoveSelectedSplit: Bool {
-        (index(of: selectedTrackID) ?? 0) > 0
+        (selectedIndex ?? 0) > 0
     }
 
     func addSplit(at time: Double) {
@@ -157,23 +320,34 @@ final class EditorModel: ObservableObject {
               time > Self.minTrackLength, time < duration - Self.minTrackLength,
               !tracks.contains(where: { abs($0.start - time) < Self.minTrackLength })
         else { return }
-        let track = Track(start: time)
-        let i = tracks.firstIndex { $0.start > time } ?? tracks.endIndex
-        tracks.insert(track, at: i)
-        selectedTrackID = track.id
+        performUndoable("分割") {
+            var track = Track(start: time)
+            let i = tracks.firstIndex { $0.start > time } ?? tracks.endIndex
+            // The fade-out stays at the end of the original range, which now belongs to the new track
+            if i > 0 {
+                track.fadeOut = tracks[i - 1].fadeOut
+                tracks[i - 1].fadeOut = Fade(curve: track.fadeOut.curve)
+            }
+            tracks.insert(track, at: i)
+            selectedTrackID = track.id
+        }
     }
 
-    /// Removes a split point (the track is merged into the previous one)
+    /// Removes a split point (the track is merged into the previous one, which takes over its fade-out)
     func removeSplit(_ id: Track.ID) {
         guard let i = index(of: id), i > 0 else { return }
-        tracks.remove(at: i)
-        selectedTrackID = tracks[i - 1].id
+        performUndoable("分割点を削除") {
+            tracks[i - 1].fadeOut = tracks[i].fadeOut
+            tracks.remove(at: i)
+            selectedTrackID = tracks[i - 1].id
+        }
     }
 
     func removeSelectedSplit() {
         if let id = selectedTrackID { removeSplit(id) }
     }
 
+    /// Moves a split point without registering undo. Callers register one step for the whole drag.
     func moveSplit(_ id: Track.ID, to time: Double) {
         guard let i = index(of: id), i > 0 else { return }
         let lower = tracks[i - 1].start + Self.minTrackLength
@@ -181,14 +355,107 @@ final class EditorModel: ObservableObject {
         tracks[i].start = min(max(time, lower), upper)
     }
 
-    /// Replaces all split points. Titles, artists and the export selection are carried over by position.
-    func applySplits(_ times: [Double]) {
-        let old = tracks
-        tracks = ([0] + times.sorted()).enumerated().map { i, start in
-            guard i < old.count else { return Track(start: start) }
-            return Track(start: start, title: old[i].title, artist: old[i].artist, isEnabled: old[i].isEnabled)
+    /// Moves the split point at the start of the selected track by `seconds`
+    func nudgeSelectedSplit(by seconds: Double) {
+        guard let i = selectedIndex, i > 0 else { return }
+        performUndoable("分割点を移動") {
+            moveSplit(tracks[i].id, to: tracks[i].start + seconds)
         }
-        selectedTrackID = tracks.first?.id
+    }
+
+    /// Replaces all split points. See replacingSplits(with:tolerance:) for what is carried over.
+    func applySplits(_ times: [Double]) {
+        performUndoable("無音区間で分割") {
+            tracks = tracks.replacingSplits(with: times, tolerance: Self.minTrackLength)
+            selectedTrackID = tracks.first?.id
+        }
+    }
+
+    func setEnabled(_ isEnabled: Bool, for id: Track.ID) {
+        guard let i = index(of: id), tracks[i].isEnabled != isEnabled else { return }
+        performUndoable(isEnabled ? "書き出しに含める" : "書き出しから外す") {
+            tracks[i].isEnabled = isEnabled
+        }
+    }
+
+    func toggleSelectedEnabled() {
+        guard let i = selectedIndex else { return }
+        setEnabled(!tracks[i].isEnabled, for: tracks[i].id)
+    }
+
+    // MARK: - Fades
+
+    func fade(_ edge: FadeEdge, ofTrackAt i: Int) -> Fade {
+        tracks[i].fade(edge)
+    }
+
+    /// The fades of a track as they are applied, shortened when the track is shorter than both together
+    func envelope(ofTrackAt i: Int) -> FadeEnvelope {
+        FadeEnvelope(length: end(ofTrackAt: i) - tracks[i].start, fadeIn: tracks[i].fadeIn, fadeOut: tracks[i].fadeOut)
+    }
+
+    /// Sets a fade's length without registering undo (see Track.setFadeDuration)
+    func setFadeDuration(_ edge: FadeEdge, _ duration: Double, ofTrackAt i: Int) {
+        tracks[i].setFadeDuration(edge, duration, trackLength: end(ofTrackAt: i) - tracks[i].start)
+    }
+
+    func setFadeCurve(_ edge: FadeEdge, _ curve: FadeCurve, ofTrackAt i: Int) {
+        performUndoable(edge.actionName + "のカーブ") {
+            switch edge {
+            case .start: tracks[i].fadeIn.curve = curve
+            case .end: tracks[i].fadeOut.curve = curve
+            }
+        }
+    }
+
+    /// Fades the track under `time` in from its start up to `time`, or out from `time` to its end
+    func setFade(_ edge: FadeEdge, at time: Double) {
+        guard let i = trackIndex(containing: time) else { return }
+        performUndoable(edge.actionName) {
+            let duration = edge == .start ? time - tracks[i].start : end(ofTrackAt: i) - time
+            setFadeDuration(edge, duration, ofTrackAt: i)
+            selectedTrackID = tracks[i].id
+        }
+    }
+
+    func removeFade(_ edge: FadeEdge, ofTrackAt i: Int) {
+        performUndoable(edge.actionName + "を解除") {
+            setFadeDuration(edge, 0, ofTrackAt: i)
+        }
+    }
+
+    /// Copies the fades of the given track to every track. Tracks too short for both are not limited here:
+    /// FadeEnvelope shortens both fades in proportion, so neither is lost.
+    func applyFadesToAllTracks(from i: Int) {
+        let fadeIn = tracks[i].fadeIn, fadeOut = tracks[i].fadeOut
+        performUndoable("フェードをすべてのトラックに適用") {
+            for j in tracks.indices {
+                tracks[j].fadeIn = fadeIn
+                tracks[j].fadeOut = fadeOut
+            }
+        }
+    }
+
+    // MARK: - Playhead
+
+    func seek(to time: Double) {
+        player.seek(to: time)
+        selectTrack(containing: player.currentTime)
+        reveal(player.currentTime)
+    }
+
+    func seek(by seconds: Double) {
+        seek(to: player.currentTime + seconds)
+    }
+
+    /// Selects the previous / next track and moves the playhead to its start. Going back from the middle
+    /// of a track returns to its start first.
+    func selectAdjacentTrack(_ offset: Int) {
+        guard let current = trackIndex(containing: player.currentTime) ?? selectedIndex else { return }
+        var target = current + offset
+        if offset < 0, player.currentTime - tracks[current].start > 1 { target = current }
+        guard tracks.indices.contains(target) else { return }
+        selectTrack(tracks[target].id, seek: true)
     }
 
     func exportSegments() -> [ExportSegment] {
@@ -202,7 +469,8 @@ final class EditorModel: ObservableObject {
                 tags.artist = tracks[i].artist
             }
             return ExportSegment(start: tracks[i].start, end: end(ofTrackAt: i),
-                                 fileBaseName: String(format: "%02d ", i + 1) + displayTitle(at: i), tags: tags)
+                                 fileBaseName: String(format: "%02d ", i + 1) + displayTitle(at: i), tags: tags,
+                                 fadeIn: tracks[i].fadeIn, fadeOut: tracks[i].fadeOut)
         }
     }
 
@@ -221,6 +489,13 @@ final class EditorModel: ObservableObject {
 
     func zoomToFit() {
         setVisible(start: 0, duration: max(duration, Self.minVisibleDuration))
+    }
+
+    /// Fits the selected track in the view with a little margin on both sides
+    func zoomToSelectedTrack() {
+        guard let i = selectedIndex else { return }
+        let start = tracks[i].start, length = end(ofTrackAt: i) - start
+        setVisible(start: start - length * 0.05, duration: max(length * 1.1, Self.minVisibleDuration))
     }
 
     func pan(by seconds: Double) {
@@ -250,4 +525,8 @@ final class EditorModel: ObservableObject {
             setVisible(start: time - visibleDuration * 0.02, duration: visibleDuration)
         }
     }
+}
+
+extension FadeEdge {
+    var actionName: String { self == .start ? "フェードイン" : "フェードアウト" }
 }

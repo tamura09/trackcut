@@ -10,18 +10,21 @@ The user interface is in Japanese.
 - Two waveform views: an overview of the whole file and a zoomable detail view with a time ruler
 - Place split points by double-clicking the waveform, pressing `M` at the playhead, or from the context menu; drag them to adjust
 - Detect split points automatically from silent gaps, with an adjustable threshold (dB) and minimum gap length
+- Fade each track in at its start and out at its end, with a choice of curve (linear, equal power, S-curve, exponential). The waveform shows the result as it will be exported
 - Name each track, choose which tracks to export, and set an artist per track
+- Undo and redo every edit (⌘Z / ⇧⌘Z). Typing into a text field becomes one step when the field finishes editing
 - Export every track to its own file named `01 Title.ext`
+- On macOS 26 and later the window uses Liquid Glass: glass toolbar groups, floating playback controls over the waveform and a glass inspector
 
 ### Export formats
 
 - **Same as source** (default)
   - WAV, FLAC and ALAC keep the source bit depth
-  - AAC is cut without re-encoding
+  - AAC is cut without re-encoding, except for tracks with a fade, which are re-encoded at 256 kbps
 - **WAV**
 - **FLAC**
 - **Apple Lossless (m4a)**
-- **AAC 256 kbps (m4a)**: the source must be 48 kHz or lower. When the source is already AAC, it is cut without re-encoding
+- **AAC 256 kbps (m4a)**: the source must be 48 kHz or lower. When the source is already AAC, it is cut without re-encoding (again, except for tracks with a fade)
 
 ### Tags
 
@@ -47,8 +50,8 @@ On an Intel Mac, build it from source as described below.
 
 ## Requirements
 
-- macOS 15 or later
-- Swift 6 toolchain (Xcode or the Command Line Tools)
+- Running: macOS 15 or later
+- Building: Xcode 26 or later, or the Command Line Tools for it. The app uses the Liquid Glass APIs from the macOS 26 SDK; on older systems it checks at run time and falls back, but older SDKs cannot compile it
 
 ## Build and run
 
@@ -65,6 +68,8 @@ During development you can also run it straight from SwiftPM:
 swift run TrackCut
 ```
 
+A binary built this way shows the pre-Liquid Glass design: SwiftPM records the deployment target (macOS 15) as the SDK version, and AppKit picks the design from it. `build-app.sh` passes the SDK to the link step so the bundle gets the current design.
+
 ## Usage
 
 ### Mouse and trackpad
@@ -73,22 +78,41 @@ swift run TrackCut
 - Drag: scrub
 - Double-click: add a split point
 - Drag a split point: move it
-- Right-click: add or delete a split point
+- Drag the round handles at the top of the selected track: set the length of its fade-in and fade-out. Where the two fades meet, the handles overlap: drag left to shorten the fade-in, right to shorten the fade-out
+- Right-click: add or delete a split point, fade in up to / out from the clicked point, remove a fade, or include / exclude the track from the export
 - Scroll: pan
 - ⌘ or ⌥ + scroll, or pinch: zoom
 - Click or drag in the overview: move the visible range
 
-### Keyboard (when the waveform has focus)
+### Inspector
+
+The inspector on the right (⌥⌘I) edits the selected track: title, artist, whether to export it, and the length and curve of its fades. "Apply these fades to all tracks" copies its fades to every track; on a track too short for both, they are shortened in proportion. The album-wide tags are at the bottom.
+
+### Keyboard
+
+Single-key shortcuts work anywhere in the window except while typing in a text field. Help > Keyboard Shortcuts (⌘/) lists them all.
 
 - `Space`: play / pause
+- `←` / `→`: move the playhead 1 second (with `⇧`: 10 seconds)
+- `↑` / `↓`: previous / next track
+- `Home` / `End`: start / end of the file
 - `M`: split at the playhead
 - `Delete`: remove the split point at the start of the selected track
+- `,` / `.`: move that split point 10 ms earlier / later (with `⇧`: 100 ms)
+- `E`: include / exclude the selected track from the export
+- `I`: fade in from the start of the track to the playhead
+- `O`: fade out from the playhead to the end of the track
+- `⇧I` / `⇧O`: remove the fade-in / fade-out
+- `=` / `-`: zoom in / out
+- `Z`: zoom to the selected track; `⇧Z`: show the whole file
+
+Menu shortcuts: ⌘O open, ⌘E export, ⇧⌘D split at silences, ⌘Z / ⇧⌘Z undo / redo, ⌘= / ⌘- / ⌘0 zoom in / out / fit, ⌥⌘I inspector.
 
 ## Development
 
 The project is a Swift package with two targets.
 
-- `TrackCutCore`: waveform analysis, silence detection, export and tag reading/writing. No UI code
+- `TrackCutCore`: waveform analysis, silence detection, fades, export and tag reading/writing. No UI code
 - `TrackCut`: the SwiftUI / AppKit app
 
 Run the tests with:

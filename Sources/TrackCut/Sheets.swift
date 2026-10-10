@@ -62,6 +62,7 @@ struct ExportSheet: View {
     @StateObject private var state = ExportState()
 
     private var format: ExportFormat { ExportFormat(rawValue: formatRaw) ?? .sameAsSource }
+    private var fadedCount: Int { editor.exportSegments().filter { !$0.envelope.isFlat }.count }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
@@ -73,6 +74,12 @@ struct ExportSheet: View {
             Text("\(editor.exportSegments().count) 曲を「01 タイトル」形式のファイル名で書き出し、タイトル・トラック番号・アルバム情報のタグを書き込みます")
                 .fixedSize(horizontal: false, vertical: true)
                 .foregroundStyle(.secondary)
+            if fadedCount > 0 {
+                Label("\(fadedCount) 曲にフェードを適用します。AAC をそのまま切り出す場合も、フェードのある曲は再エンコードされます",
+                      systemImage: "waveform.path")
+                    .fixedSize(horizontal: false, vertical: true)
+                    .foregroundStyle(.secondary)
+            }
 
             if let progress = state.progress {
                 ProgressView(value: progress)
@@ -156,5 +163,81 @@ struct ExportSheet: View {
             }
             state.progress = nil
         }
+    }
+}
+
+/// List of every keyboard shortcut (Help > Keyboard Shortcuts, ⌘/)
+struct ShortcutsSheet: View {
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        VStack(spacing: 0) {
+            ScrollView {
+                VStack(alignment: .leading, spacing: 16) {
+                    HStack(alignment: .top, spacing: 28) {
+                        column(KeyCommands.sections.prefix(2))
+                        VStack(alignment: .leading, spacing: 20) {
+                            column(KeyCommands.sections.dropFirst(2))
+                            ShortcutGroup(title: "メニュー", rows: KeyCommands.menuShortcuts)
+                        }
+                    }
+                    Text("1 文字のショートカットは、テキストフィールドへの入力中を除き、ウインドウのどこでも使えます。")
+                        .font(.callout)
+                        .foregroundStyle(.secondary)
+                }
+                .padding(24)
+            }
+            HStack {
+                Spacer()
+                Button("閉じる") { dismiss() }
+                    .keyboardShortcut(.defaultAction)
+            }
+            .padding(16)
+        }
+        .frame(width: 760, height: 600)
+    }
+
+    private func column(_ sections: ArraySlice<KeyCommands.Section>) -> some View {
+        VStack(alignment: .leading, spacing: 20) {
+            ForEach(Array(sections)) { section in
+                ShortcutGroup(title: section.title, rows: section.commands.map { ($0.label, $0.title) })
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+}
+
+private struct ShortcutGroup: View {
+    let title: String
+    let rows: [(label: String, title: String)]
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text(title).font(.headline)
+            Grid(alignment: .leading, horizontalSpacing: 12, verticalSpacing: 6) {
+                ForEach(rows, id: \.label) { row in
+                    GridRow {
+                        HStack(spacing: 3) {
+                            ForEach(row.label.split(separator: " ").map(String.init), id: \.self) { KeyCap(key: $0) }
+                        }
+                        .gridColumnAlignment(.trailing)
+                        Text(row.title)
+                    }
+                }
+            }
+        }
+    }
+}
+
+private struct KeyCap: View {
+    let key: String
+
+    var body: some View {
+        Text(key)
+            .font(.system(size: 12, weight: .medium, design: .rounded))
+            .padding(.horizontal, 6)
+            .frame(minWidth: 24, minHeight: 22)
+            .background(.quaternary.opacity(0.6), in: RoundedRectangle(cornerRadius: 6, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: 6, style: .continuous).strokeBorder(.separator))
     }
 }
