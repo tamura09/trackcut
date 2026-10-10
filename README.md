@@ -34,6 +34,20 @@ Exported files get the title, track number and total, artist, album, album artis
 - **M4A**: iTunes metadata
 - **WAV**: LIST/INFO chunk. INFO has no field for the album artist or the track total, so those two are not written
 
+## Install
+
+On an Apple silicon Mac with macOS 15 or later, install it with [Homebrew](https://brew.sh):
+
+```sh
+brew install --cask tamura09/tap/trackcut
+```
+
+or download `TrackCut-<version>-arm64.zip` from [Releases](https://github.com/tamura09/trackcut/releases).
+
+The app is ad-hoc signed and not notarized, so macOS blocks it the first time. After the first attempt to open it, go to System Settings > Privacy & Security and choose "Open Anyway".
+
+On an Intel Mac, build it from source as described below.
+
 ## Requirements
 
 - Running: macOS 15 or later
