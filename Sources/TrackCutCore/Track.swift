@@ -8,13 +8,20 @@ public struct Track: Identifiable, Hashable, Sendable {
     /// Falls back to the album's artist when empty
     public var artist: String
     public var isEnabled: Bool
+    /// Fade at the start of the track
+    public var fadeIn: Fade
+    /// Fade at the end of the track
+    public var fadeOut: Fade
 
-    public init(id: UUID = UUID(), start: Double, title: String = "", artist: String = "", isEnabled: Bool = true) {
+    public init(id: UUID = UUID(), start: Double, title: String = "", artist: String = "", isEnabled: Bool = true,
+                fadeIn: Fade = Fade(), fadeOut: Fade = Fade()) {
         self.id = id
         self.start = start
         self.title = title
         self.artist = artist
         self.isEnabled = isEnabled
+        self.fadeIn = fadeIn
+        self.fadeOut = fadeOut
     }
 }
 

@@ -318,3 +318,84 @@ func float64SourceKeepsTheHighestSupportedDepth(format: ExportFormat, expectedBi
         source: url, segments: [ExportSegment(start: 0, end: 1, fileBaseName: "out")], format: format, to: dir)[0]
     #expect(try SourceAudioInfo(url: out).bitDepth == expectedBits)
 }
+
+@Test func fadeCurvesRiseFromSilenceToFullLevel() {
+    for curve in FadeCurve.allCases {
+        #expect(curve.gain(0) == 0)
+        #expect(abs(curve.gain(1) - 1) < 1e-12)
+        let gains = stride(from: 0.0, through: 1.0, by: 0.01).map(curve.gain)
+        #expect(zip(gains, gains.dropFirst()).allSatisfy { $0 <= $1 }, "\(curve)")
+    }
+}
+
+@Test func overlappingFadesAreShortenedInProportion() {
+    let envelope = FadeEnvelope(length: 3, fadeIn: Fade(duration: 2), fadeOut: Fade(duration: 4, curve: .sCurve))
+    #expect(abs(envelope.fadeIn.duration - 1) < 1e-12)
+    #expect(abs(envelope.fadeOut.duration - 2) < 1e-12)
+    #expect(envelope.fadeOut.curve == .sCurve)
+    #expect(envelope.gain(at: 0) == 0)
+    #expect(abs(envelope.gain(at: 1) - 1) < 1e-12)
+    #expect(abs(envelope.gain(at: 0.5) - 0.5) < 1e-12)
+    #expect(envelope.gain(at: 3) == 0)
+    #expect(FadeEnvelope(length: 3, fadeIn: Fade(), fadeOut: Fade()).isFlat)
+}
+
+/// Channel 0 of a file as Float32
+private func readSamples(_ url: URL) throws -> [Float] {
+    let file = try AVAudioFile(forReading: url)
+    let buffer = AVAudioPCMBuffer(pcmFormat: file.processingFormat, frameCapacity: AVAudioFrameCount(file.length))!
+    try file.read(into: buffer)
+    return Array(UnsafeBufferPointer(start: buffer.floatChannelData![0], count: Int(buffer.frameLength)))
+}
+
+@Test func exportAppliesFadesAndLeavesTheRestBitExact() async throws {
+    let dir = try makeTempDir()
+    let source = try makeTestWAV(in: dir)
+    let sampleRate = 44_100
+    let plain = try await AudioExporter.export(
+        source: source, segments: [ExportSegment(start: 0, end: 3, fileBaseName: "plain")], format: .wav, to: dir)[0]
+    let faded = try await AudioExporter.export(
+        source: source,
+        segments: [ExportSegment(start: 0, end: 3, fileBaseName: "faded",
+                                 fadeIn: Fade(duration: 1), fadeOut: Fade(duration: 0.5, curve: .equalPower))],
+        format: .wav, to: dir)[0]
+    let a = try readSamples(plain)
+    let b = try readSamples(faded)
+    #expect(a.count == 3 * sampleRate && b.count == a.count)
+
+    // 16-bit output: allow for one rounding step on top of the gain
+    let lsb: Float = 1.0 / 32_768
+    #expect(b.first == 0)
+    #expect(b.last == 0)
+    for k in stride(from: 0, to: sampleRate, by: 997) {
+        let expected = a[k] * Float(k) / Float(sampleRate)
+        #expect(abs(b[k] - expected) <= lsb, "fade-in frame \(k)")
+    }
+    let outFrames = sampleRate / 2
+    let outStart = a.count - outFrames
+    for k in stride(from: outStart, to: a.count, by: 499) {
+        let progress = Double(a.count - 1 - k) / Double(outFrames)
+        let expected = a[k] * Float(sin(progress * .pi / 2))
+        #expect(abs(b[k] - expected) <= lsb, "fade-out frame \(k)")
+    }
+    #expect(Array(a[sampleRate..<outStart]) == Array(b[sampleRate..<outStart]))
+}
+
+@Test func fadedSegmentsOfAnAACSourceAreReencoded() async throws {
+    let dir = try makeTempDir()
+    let wav = try makeTestWAV(in: dir)
+    let aac = try await AudioExporter.export(
+        source: wav, segments: [ExportSegment(start: 0, end: 13, fileBaseName: "aac")], format: .aac, to: dir)[0]
+    let cut = try await AudioExporter.export(
+        source: aac,
+        segments: [ExportSegment(start: 0, end: 3, fileBaseName: "faded", fadeIn: Fade(duration: 2))],
+        format: .sameAsSource, to: dir)[0]
+    #expect(cut.pathExtension == "m4a")
+
+    let samples = try readSamples(cut)
+    func rms(_ range: Range<Int>) -> Float {
+        sqrt(samples[range].reduce(0) { $0 + $1 * $1 } / Float(range.count))
+    }
+    // The first 0.1 s is at most 5% of full level, while 2.5 s in is past the fade
+    #expect(rms(0..<4_410) < rms(110_250..<114_660) * 0.1)
+}

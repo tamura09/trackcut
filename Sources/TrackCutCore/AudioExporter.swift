@@ -23,12 +23,21 @@ public struct ExportSegment: Sendable {
     public var fileBaseName: String
     /// No tags are written when nil
     public var tags: AudioTags?
+    public var fadeIn: Fade
+    public var fadeOut: Fade
 
-    public init(start: Double, end: Double, fileBaseName: String, tags: AudioTags? = nil) {
+    public init(start: Double, end: Double, fileBaseName: String, tags: AudioTags? = nil,
+                fadeIn: Fade = Fade(), fadeOut: Fade = Fade()) {
         self.start = start
         self.end = end
         self.fileBaseName = fileBaseName
         self.tags = tags
+        self.fadeIn = fadeIn
+        self.fadeOut = fadeOut
+    }
+
+    public var envelope: FadeEnvelope {
+        FadeEnvelope(length: end - start, fadeIn: fadeIn, fadeOut: fadeOut)
     }
 }
 
@@ -247,7 +256,11 @@ public enum AudioExporter {
                               progress: @escaping @Sendable (Double) -> Void = { _ in }) async throws -> [URL] {
         let info = try SourceAudioInfo(url: source)
         let resolved = ResolvedFormat(format, source: info)
-        if resolved == .aac && info.sampleRate > 48_000 {
+        // Fades change the audio, so a faded segment of an AAC source is re-encoded instead of cut as is.
+        let formats = segments.map { segment in
+            resolved == .aacPassthrough && !segment.envelope.isFlat ? ResolvedFormat.aac : resolved
+        }
+        if formats.contains(.aac) && info.sampleRate > 48_000 {
             throw AudioError.unsupportedSampleRateForAAC(info.sampleRate)
         }
         let urls = try outputURLs(source: source, segments: segments, format: format, directory: directory)
@@ -259,7 +272,7 @@ public enum AudioExporter {
         let totalDuration = max(segments.reduce(0) { $0 + ($1.end - $1.start) }, 0.001)
         var doneDuration = 0.0
 
-        for (segment, url) in zip(segments, urls) {
+        for ((segment, url), segmentFormat) in zip(zip(segments, urls), formats) {
             try Task.checkCancellation()
             // Write to a hidden file next to the output and move it into place only once it is complete,
             // so a cancelled or failed export leaves an existing file untouched.
@@ -271,10 +284,10 @@ public enum AudioExporter {
                 progress((base + fraction * segmentDuration) / totalDuration)
             }
             do {
-                if resolved == .aacPassthrough {
+                if segmentFormat == .aacPassthrough {
                     try await exportPassthrough(source: source, segment: segment, sampleRate: info.sampleRate, to: temp)
                 } else {
-                    try transcode(source: source, segment: segment, format: resolved, to: temp, progress: report)
+                    try transcode(source: source, segment: segment, format: segmentFormat, to: temp, progress: report)
                     if let tags = segment.tags {
                         try await TagWriter.write(tags, to: temp)
                     }
@@ -335,12 +348,14 @@ public enum AudioExporter {
 
         input.framePosition = startFrame
         let total = endFrame - startFrame
+        let fades = FrameFades(segment.envelope, sampleRate: sampleRate, frameCount: total)
         var remaining = total
         while remaining > 0 {
             try Task.checkCancellation()
             let n = AVAudioFrameCount(min(Int64(buffer.frameCapacity), remaining))
             try input.read(into: buffer, frameCount: n)
             if buffer.frameLength == 0 { break }
+            fades.apply(to: buffer, offset: total - remaining)
             try output.write(buffer)
             remaining -= Int64(buffer.frameLength)
             progress(Double(total - remaining) / Double(total))
@@ -363,5 +378,71 @@ public enum AudioExporter {
             session.metadata = M4ATags.metadataItems(tags)
         }
         try await session.export(to: url, as: .m4a)
+    }
+}
+
+/// A segment's fades counted in frames
+struct FrameFades {
+    let frameCount: Int64
+    let inFrames: Int64
+    let outFrames: Int64
+    let inCurve: FadeCurve
+    let outCurve: FadeCurve
+
+    init(_ envelope: FadeEnvelope, sampleRate: Double, frameCount: Int64) {
+        self.frameCount = frameCount
+        inFrames = min(frameCount, Int64((envelope.fadeIn.duration * sampleRate).rounded()))
+        outFrames = min(frameCount, Int64((envelope.fadeOut.duration * sampleRate).rounded()))
+        inCurve = envelope.fadeIn.curve
+        outCurve = envelope.fadeOut.curve
+    }
+
+    /// Gain of frame `frame` of the segment. The first frame of a fade-in and the last frame of a
+    /// fade-out are silent.
+    func gain(_ frame: Int64) -> Double {
+        var gain = 1.0
+        if frame < inFrames {
+            gain *= inCurve.gain(Double(frame) / Double(inFrames))
+        }
+        if frame >= frameCount - outFrames {
+            gain *= outCurve.gain(Double(frameCount - 1 - frame) / Double(outFrames))
+        }
+        return gain
+    }
+
+    /// Scales the frames of `buffer` that fall inside a fade. `offset` is the segment frame that the
+    /// buffer starts at. Frames outside the fades are left untouched, so they stay bit-exact.
+    func apply(to buffer: AVAudioPCMBuffer, offset: Int64) {
+        let n = Int64(buffer.frameLength)
+        let fadeInEnd = min(n, max(0, inFrames - offset))
+        let fadeOutStart = max(fadeInEnd, min(n, max(0, frameCount - outFrames - offset)))
+        for range in [0..<fadeInEnd, fadeOutStart..<n] where !range.isEmpty {
+            let gains = range.map { gain(offset + $0) }
+            Self.scale(buffer, frames: Int(range.lowerBound), gains: gains)
+        }
+    }
+
+    private static func scale(_ buffer: AVAudioPCMBuffer, frames start: Int, gains: [Double]) {
+        for audioBuffer in UnsafeMutableAudioBufferListPointer(buffer.mutableAudioBufferList) {
+            guard let data = audioBuffer.mData else { continue }
+            let stride = Int(audioBuffer.mNumberChannels)
+            func scale<Sample>(_: Sample.Type, _ apply: (Sample, Double) -> Sample) {
+                let samples = data.assumingMemoryBound(to: Sample.self)
+                for (i, gain) in gains.enumerated() {
+                    for c in 0..<stride {
+                        let index = (start + i) * stride + c
+                        samples[index] = apply(samples[index], gain)
+                    }
+                }
+            }
+            switch buffer.format.commonFormat {
+            case .pcmFormatFloat32: scale(Float.self) { $0 * Float($1) }
+            case .pcmFormatFloat64: scale(Double.self) { $0 * $1 }
+            // The gain never exceeds 1, so the rounded result stays in range.
+            case .pcmFormatInt32: scale(Int32.self) { Int32((Double($0) * $1).rounded()) }
+            case .pcmFormatInt16: scale(Int16.self) { Int16((Double($0) * $1).rounded()) }
+            default: break
+            }
+        }
     }
 }
