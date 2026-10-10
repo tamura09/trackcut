@@ -48,6 +48,12 @@ The app is ad-hoc signed and not notarized, so macOS blocks it the first time. A
 
 On an Intel Mac, build it from source as described below.
 
+### Updates
+
+TrackCut checks for a new version once a day, and on demand with TrackCut > アップデートを確認…. It shows the release notes, then downloads, installs and relaunches the new version with [Sparkle](https://sparkle-project.org). Every update is checked against the project's EdDSA signature before it is installed.
+
+Version 0.1.0 does not have the updater. Replace it once by hand: download the latest release again, or run `brew upgrade --cask --greedy trackcut`.
+
 ## Requirements
 
 - Running: macOS 15 or later
@@ -60,7 +66,7 @@ On an Intel Mac, build it from source as described below.
 open build/TrackCut.app
 ```
 
-`build-app.sh` builds a release binary with SwiftPM, wraps it in an app bundle with an `Info.plist` (so Finder can open audio files with it), and signs it ad hoc.
+`build-app.sh` builds a release binary with SwiftPM, wraps it in an app bundle with an `Info.plist` (so Finder can open audio files with it) and Sparkle.framework, and signs it ad hoc. The bundle's version is `TRACKCUT_VERSION` if set, otherwise the latest `v*` tag.
 
 During development you can also run it straight from SwiftPM:
 
@@ -133,3 +139,15 @@ swift test -Xswiftc -plugin-path -Xswiftc /Library/Developer/CommandLineTools/us
 ```
 
 For the same reason, the app avoids the `@State` macro and keeps view state in `ObservableObject`s, so it builds with either toolchain.
+
+## Releasing
+
+```sh
+./release.sh 0.2.0 notes.md
+```
+
+`release.sh` builds the bundle at that version, zips it, signs the zip and an `appcast.xml` feed with the Sparkle EdDSA key, and after a confirmation creates the `v0.2.0` release on GitHub with both attached. It releases only a clean checkout of `origin/main`, and only a version newer than the latest release. The Markdown in `notes.md` becomes the release body and the notes shown in the update dialog. `--no-publish` stops after writing the files to `build/`.
+
+The app reads the feed from `releases/latest/download/appcast.xml`, so publishing the release is what offers it to users. Afterwards, bump `version` and `sha256` in the Homebrew cask; the script prints both.
+
+The private key is in the maintainer's login Keychain under the account `com.9tmr.TrackCut`; its public half is `SUPublicEDKey` in `build-app.sh`. Without it no further update can be shipped to existing installs, so keep a backup (`.build/artifacts/sparkle/Sparkle/bin/generate_keys --account com.9tmr.TrackCut -x <file>`) somewhere safe. On another Mac, import it with `-f <file>`.
