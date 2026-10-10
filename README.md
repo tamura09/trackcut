@@ -148,8 +148,8 @@ The app icon is `AppIcon.icon`, an Icon Composer file: open it in Icon Composer 
 
 The strings in the code are the English text, and they double as the keys of the translations in `Localizations/`:
 
-- `ja.lproj/Localizable.strings`: the Japanese translation of every string
-- `en.lproj/Localizable.stringsdict`: the singular forms of the English strings that contain a count
+- `ja.lproj/Localizable.strings`: the Japanese translation of every string without a count
+- `ja.lproj/Localizable.stringsdict` and `en.lproj/Localizable.stringsdict`: the strings that contain a count. English needs a singular form; Japanese has a single form, but is kept here too, since a `.stringsdict` in another language can take precedence over this language's `.strings`
 
 Pass user-facing text to a SwiftUI view as a literal, or wrap it in `String(localized:)` where the API takes a plain `String` (AppKit, error messages, undo action names). Then run:
 

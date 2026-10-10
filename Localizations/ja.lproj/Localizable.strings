@@ -1,12 +1,11 @@
-/* Japanese strings. The keys are the English text in the source code. check-localizations.sh fails when
-   a key in the code is missing here, or when a key here is no longer used. */
+/* Japanese strings. The keys are the English text in the source code. Strings with a count are in
+   Localizable.stringsdict instead. check-localizations.sh fails when a key in the code is missing from
+   both, or when a key is no longer used. */
 
 /* Window and toolbar */
 "TrackCut" = "TrackCut";
 "Error" = "エラー";
 "OK" = "OK";
-"%lld tracks · %@" = "%1$lld トラック · %2$@";
-"%lld tracks (%lld exported) · %@" = "%1$lld トラック（書き出し %2$lld）· %3$@";
 "Open" = "開く";
 "Open (⌘O)" = "開く (⌘O)";
 "Open…" = "開く…";
@@ -156,7 +155,6 @@
 "%lld dB" = "%lld dB";
 "Minimum gap" = "最短の無音";
 "%.1f s" = "%.1f 秒";
-"Results in %lld tracks. The current split points are replaced." = "%lld 曲に分割されます（現在の分割点は置き換えられます）";
 "Cancel" = "キャンセル";
 "Apply" = "適用";
 
@@ -164,13 +162,9 @@
 "Export Tracks" = "曲ごとに書き出し";
 "Format" = "形式";
 "Same as Source" = "元のファイルと同じ";
-"Exports %lld tracks as files named “01 Title”, tagged with the title, track number and album info" = "%lld 曲を「01 タイトル」形式のファイル名で書き出し、タイトル・トラック番号・アルバム情報のタグを書き込みます";
-"Applies fades to %lld tracks. They are re-encoded even when AAC is otherwise cut as is" = "%lld 曲にフェードを適用します。AAC をそのまま切り出す場合も、フェードのある曲は再エンコードされます";
-"Exported %lld files" = "%lld ファイルを書き出しました";
 "Show in Finder" = "Finder で表示";
 "Stop" = "中止";
 "Choose Folder and Export…" = "書き出し先を選んで書き出す…";
-"%lld files already exist. Do you want to replace them?" = "%lld 個のファイルが既に存在します。上書きしますか？";
 "Replace" = "上書き";
 "Export stopped." = "中止しました";
 
