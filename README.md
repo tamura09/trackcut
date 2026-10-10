@@ -1,3 +1,5 @@
+<p align="center"><img src="docs/icon.png" width="128" height="128" alt="TrackCut icon"></p>
+
 # trackcut
 
 A macOS app for splitting a long recording (a live set, a ripped album, a radio show) into one file per track while looking at the waveform. It reads FLAC, M4A and WAV, and writes each track as its own file with tags.
@@ -57,7 +59,7 @@ Version 0.1.0 does not have the updater. Replace it once by hand: download the l
 ## Requirements
 
 - Running: macOS 15 or later
-- Building: Xcode 26 or later, or the Command Line Tools for it. The app uses the Liquid Glass APIs from the macOS 26 SDK; on older systems it checks at run time and falls back, but older SDKs cannot compile it
+- Building: Xcode 26 or later. The app uses the Liquid Glass APIs from the macOS 26 SDK; on older systems it checks at run time and falls back, but older SDKs cannot compile it. `swift build` and `swift test` also work with just the Command Line Tools, but `build-app.sh` needs Xcode for `actool`, which compiles the app icon
 
 ## Build and run
 
@@ -66,7 +68,7 @@ Version 0.1.0 does not have the updater. Replace it once by hand: download the l
 open build/TrackCut.app
 ```
 
-`build-app.sh` builds a release binary with SwiftPM, wraps it in an app bundle with an `Info.plist` (so Finder can open audio files with it) and Sparkle.framework, and signs it ad hoc. The bundle's version is `TRACKCUT_VERSION` if set, otherwise the latest `v*` tag.
+`build-app.sh` builds a release binary with SwiftPM, wraps it in an app bundle with an `Info.plist` (so Finder can open audio files with it), the app icon and Sparkle.framework, and signs it ad hoc. The bundle's version is `TRACKCUT_VERSION` if set, otherwise the latest `v*` tag.
 
 During development you can also run it straight from SwiftPM:
 
@@ -139,6 +141,8 @@ swift test -Xswiftc -plugin-path -Xswiftc /Library/Developer/CommandLineTools/us
 ```
 
 For the same reason, the app avoids the `@State` macro and keeps view state in `ObservableObject`s, so it builds with either toolchain.
+
+The app icon is `AppIcon.icon`, an Icon Composer file: open it in Icon Composer (Xcode > Open Developer Tool) to edit it. `build-app.sh` compiles it with `actool` into `Assets.car`, which macOS 26 and later draw with Liquid Glass, and `AppIcon.icns` for macOS 15. `docs/icon.png`, shown at the top of this README, is a render of the built app's icon; update it along with the icon.
 
 ## Releasing
 
