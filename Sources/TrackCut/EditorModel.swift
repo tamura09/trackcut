@@ -24,6 +24,9 @@ final class EditorModel: ObservableObject {
 
     let player = PlayerModel()
     private var loadTask: Task<Void, Never>?
+    /// Identifies the latest open(). Results from earlier loads are dropped by comparing against it;
+    /// the URL is not enough because the same file can be opened again while it is still loading.
+    private var loadID = UUID()
     private var cancellables = Set<AnyCancellable>()
 
     var duration: Double { peaks?.duration ?? 0 }
@@ -59,6 +62,8 @@ final class EditorModel: ObservableObject {
         // Only cancel the previous analysis once the new file has opened. Cancelling first would
         // leave the window stuck on the progress view when the new file fails to open.
         loadTask?.cancel()
+        let id = UUID()
+        loadID = id
         sourceURL = url
         peaks = nil
         tracks = []
@@ -68,26 +73,26 @@ final class EditorModel: ObservableObject {
 
         Task { [weak self] in
             let source = await TagReader.read(from: url)
-            self?.applySourceTags(source, url: url)
+            self?.applySourceTags(source, loadID: id)
         }
 
         loadTask = Task.detached(priority: .userInitiated) { [weak self] in
             do {
                 let peaks = try WaveformAnalyzer.analyze(url: url) { p in
                     Task { @MainActor in
-                        if self?.peaks == nil, self?.sourceURL == url { self?.loadingProgress = p }
+                        if self?.loadID == id, self?.peaks == nil { self?.loadingProgress = p }
                     }
                 }
-                await self?.finishLoading(url: url, peaks: peaks)
+                await self?.finishLoading(peaks: peaks, loadID: id)
             } catch is CancellationError {
             } catch {
-                await self?.failLoading(url: url, error: error)
+                await self?.failLoading(error: error, loadID: id)
             }
         }
     }
 
-    private func finishLoading(url: URL, peaks: WaveformPeaks) {
-        guard sourceURL == url else { return }
+    private func finishLoading(peaks: WaveformPeaks, loadID id: UUID) {
+        guard loadID == id else { return }
         self.peaks = peaks
         loadingProgress = nil
         tracks = [Track(start: 0)]
@@ -96,8 +101,8 @@ final class EditorModel: ObservableObject {
     }
 
     /// Fills in the source file's tags, but only for fields the user has not filled yet
-    private func applySourceTags(_ source: AudioTags, url: URL) {
-        guard sourceURL == url else { return }
+    private func applySourceTags(_ source: AudioTags, loadID id: UUID) {
+        guard loadID == id else { return }
         if albumTags.album.isEmpty { albumTags.album = source.album }
         if albumTags.artist.isEmpty { albumTags.artist = source.artist }
         if albumTags.albumArtist.isEmpty { albumTags.albumArtist = source.albumArtist }
@@ -105,8 +110,8 @@ final class EditorModel: ObservableObject {
         if albumTags.genre.isEmpty { albumTags.genre = source.genre }
     }
 
-    private func failLoading(url: URL, error: Error) {
-        guard sourceURL == url else { return }
+    private func failLoading(error: Error, loadID id: UUID) {
+        guard loadID == id else { return }
         loadingProgress = nil
         sourceURL = nil
         errorMessage = "波形を読み込めませんでした: \(error.localizedDescription)"
