@@ -5,6 +5,7 @@ struct ContentView: View {
     @ObservedObject var editor: EditorModel
     @ObservedObject private var sheets = SheetState.shared
     @AppStorage("showsInspector") private var showsInspector = true
+    @Environment(\.openWindow) private var openWindow
 
     private var isLoaded: Bool { editor.peaks != nil }
 
@@ -18,12 +19,12 @@ struct ContentView: View {
                         .frame(minHeight: 140, idealHeight: 240)
                 }
             } else if let progress = editor.loadingProgress {
-                LoadingView(fileName: editor.sourceURL?.lastPathComponent ?? "", progress: progress)
+                LoadingView(fileName: editor.displayName, progress: progress)
             } else {
                 EmptyStateView(isTargeted: sheets.isDropTargeted) { editor.presentOpenPanel() }
             }
         }
-        .navigationTitle(editor.sourceURL?.lastPathComponent ?? "TrackCut")
+        .navigationTitle(title)
         .navigationSubtitle(subtitle)
         .toolbar { toolbar }
         .inspector(isPresented: Binding(get: { isLoaded && showsInspector }, set: { showsInspector = $0 })) {
@@ -31,10 +32,16 @@ struct ContentView: View {
                 .inspectorColumnWidth(min: 260, ideal: 300, max: 420)
         }
         .onDrop(of: [.fileURL], isTargeted: $sheets.isDropTargeted) { providers in
-            guard let provider = providers.first else { return false }
-            _ = provider.loadObject(ofClass: URL.self) { url, _ in
-                guard let url else { return }
-                Task { @MainActor in editor.open(url) }
+            guard !providers.isEmpty else { return false }
+            Task {
+                var urls: [URL] = []
+                for provider in providers {
+                    let url: URL? = await withCheckedContinuation { continuation in
+                        _ = provider.loadObject(ofClass: URL.self) { url, _ in continuation.resume(returning: url) }
+                    }
+                    if let url { urls.append(url) }
+                }
+                editor.openAfterConfirming(urls)
             }
             return true
         }
@@ -47,7 +54,16 @@ struct ContentView: View {
         .sheet(isPresented: $sheets.showsSilence) { SilenceDetectionSheet(editor: editor) }
         .sheet(isPresented: $sheets.showsExport) { ExportSheet(editor: editor) }
         .sheet(isPresented: $sheets.showsShortcuts) { ShortcutsSheet() }
+        .sheet(isPresented: Binding(get: { editor.filesToJoin != nil }, set: { if !$0 { editor.filesToJoin = nil } })) {
+            FilesSheet(editor: editor, mode: .join(editor.filesToJoin ?? []))
+        }
+        .sheet(isPresented: $sheets.showsArrange) { FilesSheet(editor: editor, mode: .arrange) }
+        // The dot in the close button
+        .onChange(of: editor.hasUnsavedChanges, initial: true) { _, edited in editor.window?.isDocumentEdited = edited }
+        .onAppear { sheets.reopenWindow = { openWindow(id: "main") } }
     }
+
+    private var title: String { editor.displayName }
 
     private var subtitle: String {
         guard isLoaded else { return "" }
@@ -95,7 +111,10 @@ final class SheetState: ObservableObject {
     @Published var showsSilence = false
     @Published var showsExport = false
     @Published var showsShortcuts = false
+    @Published var showsArrange = false
     @Published var isDropTargeted = false
+    /// Opens the editor window again after it was closed
+    var reopenWindow: (() -> Void)?
 }
 
 /// Overview, detail waveform and the floating transport controls
@@ -115,6 +134,18 @@ private struct WaveformPanel: View {
                     TransportBar(editor: editor, player: editor.player)
                         .padding(.bottom, 12)
                         .padding(.horizontal, 12)
+                }
+                .overlay(alignment: .top) {
+                    if let progress = editor.addingProgress {
+                        HStack(spacing: 10) {
+                            Text("Analyzing Added Files…").font(.callout)
+                            ProgressView(value: progress).frame(width: 140)
+                        }
+                        .padding(.horizontal, 16)
+                        .padding(.vertical, 8)
+                        .glassSurface(in: Capsule())
+                        .padding(.top, 36)
+                    }
                 }
         }
         .padding(12)

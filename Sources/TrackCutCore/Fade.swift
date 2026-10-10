@@ -1,7 +1,7 @@
 import Foundation
 
 /// Shape of a fade's gain curve
-public enum FadeCurve: String, CaseIterable, Identifiable, Sendable {
+public enum FadeCurve: String, CaseIterable, Identifiable, Sendable, Codable {
     case linear, equalPower, sCurve, exponential
 
     public var id: String { rawValue }
@@ -29,7 +29,7 @@ public enum FadeCurve: String, CaseIterable, Identifiable, Sendable {
 }
 
 /// A fade at the start (fade-in) or the end (fade-out) of a track. A duration of 0 means no fade.
-public struct Fade: Hashable, Sendable {
+public struct Fade: Hashable, Sendable, Codable {
     public var duration: Double
     public var curve: FadeCurve
 

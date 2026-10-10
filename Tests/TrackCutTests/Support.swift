@@ -10,10 +10,10 @@ import TrackCutCore
 struct AppTests {}
 
 /// 3 s tone -> 2 s silence -> 3 s tone -> 2 s silence -> 3 s tone (13 s in total)
-func makeTestWAV() throws -> URL {
-    let dir = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+func makeTestWAV(named name: String = "source.wav", in folder: URL? = nil) throws -> URL {
+    let dir = folder ?? FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
     try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
-    let url = dir.appendingPathComponent("source.wav")
+    let url = dir.appendingPathComponent(name)
     let sampleRate = 44_100.0
     let settings: [String: Any] = [
         AVFormatIDKey: kAudioFormatLinearPCM, AVSampleRateKey: sampleRate, AVNumberOfChannelsKey: 2,
@@ -46,16 +46,22 @@ func makeTestWAV() throws -> URL {
 func loadedEditor() async throws -> (EditorModel, UndoManager) {
     let editor = EditorModel()
     editor.open(try makeTestWAV())
+    try await waitUntilLoaded(editor)
+    let undoManager = UndoManager()
+    undoManager.groupsByEvent = false
+    editor.undoManager = undoManager
+    return (editor, undoManager)
+}
+
+/// Waits for the file opened in `editor` to finish loading
+@MainActor
+func waitUntilLoaded(_ editor: EditorModel) async throws {
     let deadline = Date().addingTimeInterval(20)
     while editor.peaks == nil {
         if let message = editor.errorMessage { throw TestFailure(message) }
         guard Date() < deadline else { throw TestFailure("the test file did not load") }
         try await Task.sleep(for: .milliseconds(10))
     }
-    let undoManager = UndoManager()
-    undoManager.groupsByEvent = false
-    editor.undoManager = undoManager
-    return (editor, undoManager)
 }
 
 struct TestFailure: Error, CustomStringConvertible {

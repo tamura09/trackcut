@@ -303,7 +303,7 @@ final class WaveformNSView: NSView {
             }
             guard mode == .detail else { continue }
 
-            let label = "\(i + 1)  \(editor.displayTitle(at: i))"
+            let label = "\(editor.exportNumber(ofTrackAt: i).map(String.init) ?? "–")  \(editor.displayTitle(at: i))"
             let attrs: [NSAttributedString.Key: Any] = [.font: font, .foregroundColor: NSColor.white]
             let size = (label as NSString).size(withAttributes: attrs)
             let maxWidth = max(0, x(for: editor.end(ofTrackAt: i)) - px - 6)

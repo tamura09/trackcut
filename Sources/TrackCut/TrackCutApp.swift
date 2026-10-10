@@ -20,7 +20,7 @@ struct TrackCutApp: App {
             ContentView(editor: editor)
                 .frame(minWidth: 640, minHeight: 560)
                 // "Open With" in Finder and drops onto the Dock icon
-                .onOpenURL { editor.open($0) }
+                .onOpenURL { editor.receiveOpenedURL($0) }
                 .handlesExternalEvents(preferring: ["*"], allowing: ["*"])
         }
         .handlesExternalEvents(matching: ["*"])
@@ -46,7 +46,21 @@ struct TrackCutApp: App {
             Button("Open…") { editor.presentOpenPanel() }
                 .keyboardShortcut("o")
         }
+        // After the group, not in place of it: it holds Close (⌘W)
+        CommandGroup(after: .saveItem) {
+            Button("Save Project") { editor.saveProject() }
+                .keyboardShortcut("s")
+                .disabled(!isLoaded)
+            Button("Save Project As…") { editor.saveProjectAs() }
+                .keyboardShortcut("s", modifiers: [.command, .shift])
+                .disabled(!isLoaded)
+        }
         CommandGroup(after: .newItem) {
+            Button("Add Files…") { editor.presentAddFilesPanel() }
+                .keyboardShortcut("o", modifiers: [.command, .option])
+                .disabled(!editor.canArrangeFiles)
+            Button("Arrange Files…") { sheets.showsArrange = true }
+                .disabled(!editor.canArrangeFiles)
             Divider()
             Button("Export…") { sheets.showsExport = true }
                 .keyboardShortcut("e")
@@ -107,5 +121,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
         true
+    }
+
+    /// Offers to save unsaved changes first. When the window has already been closed (closing the last
+    /// window quits the app) and the user cancels, the window opens again with the work still in it.
+    func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
+        MainActor.assumeIsolated {
+            if EditorModel.shared.confirmDiscardingChanges() { return .terminateNow }
+            if EditorModel.shared.window?.isVisible != true { SheetState.shared.reopenWindow?() }
+            return .terminateCancel
+        }
     }
 }

@@ -101,6 +101,9 @@ enum KeyCommands {
     /// Shortcuts that live in the menu bar, listed alongside the single-key ones
     static let menuShortcuts: [(label: String, title: String)] = [
         ("⌘ O", String(localized: "Open")),
+        ("⌥ ⌘ O", String(localized: "Add files")),
+        ("⌘ S", String(localized: "Save project")),
+        ("⇧ ⌘ S", String(localized: "Save project as")),
         ("⌘ E", String(localized: "Export")),
         ("⇧ ⌘ D", String(localized: "Split at silences")),
         ("⌘ Z", String(localized: "Undo")),
