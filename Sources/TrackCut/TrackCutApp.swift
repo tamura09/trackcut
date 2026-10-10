@@ -9,6 +9,10 @@ struct TrackCutApp: App {
     @ObservedObject private var updater = AppUpdater.shared
     @AppStorage("showsInspector") private var showsInspector = true
 
+    init() {
+        LegacyDefaults.migrate()
+    }
+
     var body: some Scene {
         WindowGroup("TrackCut", id: "main") {
             // The inspector adds its own column to this width
