@@ -147,9 +147,13 @@ struct ExportSheet: View {
         return String(localized: "Same as Source (\(value))")
     }
 
+    /// The depth "same as source" is written at in this format (FLAC tops out at 24 bit, for example)
     private var sourceBitDepth: String? {
-        guard let info = editor.source?.info, info.isLossless else { return nil }
-        return AudioFormatText.bitDepth(info.bitDepth, isFloat: info.isFloat)
+        guard let info = editor.source?.info else { return nil }
+        var options = self.options
+        options.bitDepth = nil
+        return AudioExporter.outputBitDepth(source: info, format: format, options: options)
+            .map { AudioFormatText.bitDepth($0.bits, isFloat: $0.isFloat) }
     }
 
     /// The source's rate, or the rate AAC lowers it to

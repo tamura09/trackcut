@@ -355,6 +355,16 @@ private final class AudioFileWriter {
 }
 
 public enum AudioExporter {
+    /// Bit depth the files are written at, and whether they are floating point. nil for AAC, which has none.
+    public static func outputBitDepth(source: SourceAudioInfo, format: ExportFormat,
+                                      options: ExportOptions) -> (bits: Int, isFloat: Bool)? {
+        switch ResolvedFormat(format, source: source, options: options) {
+        case .pcm(let bits, let isFloat): (bits, isFloat)
+        case .flac(let bits), .alac(let bits): (bits, false)
+        case .aac, .aacPassthrough: nil
+        }
+    }
+
     /// Sample rate the files are written at
     public static func outputSampleRate(source: SourceAudioInfo, format: ExportFormat, options: ExportOptions) -> Double {
         ResolvedFormat(format, source: source, options: options)

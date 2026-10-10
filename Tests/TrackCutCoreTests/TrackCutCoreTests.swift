@@ -866,3 +866,43 @@ private func arranged(_ order: [Int?], lengths: [Double]) -> [Track] {
     try reader.read(48_000..<96_000) { converted += Int($0.frameLength) }
     #expect(converted == 48_000)
 }
+
+/// PR #9 review: a 32-bit integer file joined with a Float32 one was rounded to Float32
+@Test func deepIntegerFilesNextToFloatOnesAreExportedAsFloat64() async throws {
+    let dir = try makeTempDir()
+    func write(_ name: String, bits: Int, isFloat: Bool, _ fill: (AVAudioPCMBuffer) -> Void) throws -> URL {
+        let url = dir.appendingPathComponent(name)
+        let settings: [String: Any] = [
+            AVFormatIDKey: kAudioFormatLinearPCM, AVSampleRateKey: 44_100.0, AVNumberOfChannelsKey: 1,
+            AVLinearPCMBitDepthKey: bits, AVLinearPCMIsFloatKey: isFloat, AVLinearPCMIsBigEndianKey: false,
+        ]
+        let file = try AVAudioFile(forWriting: url, settings: settings,
+                                   commonFormat: isFloat ? .pcmFormatFloat32 : .pcmFormatInt32, interleaved: false)
+        let buffer = AVAudioPCMBuffer(pcmFormat: file.processingFormat, frameCapacity: 4_410)!
+        buffer.frameLength = 4_410
+        fill(buffer)
+        try file.write(from: buffer)
+        return url
+    }
+    let samples: [Int32] = [0x4000_0001, -0x4000_0001, 0x7FFF_FFFF, 1]
+    let int32 = try write("int32.wav", bits: 32, isFloat: false) { buffer in
+        for i in 0..<4_410 { buffer.int32ChannelData![0][i] = samples[i % samples.count] }
+    }
+    let float32 = try write("float32.wav", bits: 32, isFloat: true) { buffer in
+        for i in 0..<4_410 { buffer.floatChannelData![0][i] = 0.25 }
+    }
+    let source = try AudioSource(urls: [float32, int32])
+    #expect(source.info.isFloat && source.info.bitDepth == 64)
+
+    let out = try await AudioExporter.export(
+        source: source, segments: [ExportSegment(start: 0.1, end: 0.2, fileBaseName: "int-part")],
+        format: .sameAsSource, to: dir.appendingPathComponent("out", isDirectory: true).creatingDirectory())[0]
+    let file = try AVAudioFile(forReading: out, commonFormat: .pcmFormatFloat64, interleaved: false)
+    let buffer = AVAudioPCMBuffer(pcmFormat: file.processingFormat, frameCapacity: 4_410)!
+    try file.read(into: buffer)
+    #expect(buffer.frameLength == 4_410)
+    // The segment starts 4410 frames into the integer file, a multiple of the pattern's length
+    let doubles = buffer.audioBufferList.pointee.mBuffers.mData!.assumingMemoryBound(to: Double.self)
+    let values = (0..<Int(buffer.frameLength)).map { Int64(doubles[$0] * 2_147_483_648) }
+    #expect(values == (0..<4_410).map { Int64(samples[$0 % samples.count]) })
+}

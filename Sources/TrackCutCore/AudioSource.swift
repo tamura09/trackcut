@@ -64,24 +64,23 @@ public struct AudioSource: Sendable, Equatable {
     /// Start of each file in seconds on the timeline
     public var fileStarts: [Double] { files.map { Double($0.startFrame) / sampleRate } }
 
-    /// Whether some file differs from the timeline's format and has to be converted as it is read. When
-    /// false, every file's samples are read as they are.
-    var needsConversion: Bool {
-        files.contains { $0.info.sampleRate != sampleRate || $0.info.channelCount != channelCount }
-    }
-
     /// The format a "same as source" export follows: the first file's codec, with the highest bit depth
-    /// of the lossless files (floating point if any of them is) and the timeline's sample rate and channel
-    /// count
+    /// of the lossless files (floating point if any of them is, 64-bit when that is needed to hold a deeper
+    /// integer file exactly) and the timeline's sample rate and channel count
     public var info: SourceAudioInfo {
         let first = files[0].info
         guard files.count > 1 else { return first }
         let lossless = files.filter(\.info.isLossless)
-        let bitDepth = lossless.map(\.info.bitDepth).max() ?? first.bitDepth
+        let isFloat = lossless.contains(where: \.info.isFloat)
+        var bitDepth = lossless.map(\.info.bitDepth).max() ?? first.bitDepth
+        // Float32 holds integers of up to 24 bits exactly; deeper integer files next to float ones need Float64
+        if isFloat, bitDepth < 64, lossless.contains(where: { !$0.info.isFloat && $0.info.bitDepth > 24 }) {
+            bitDepth = 64
+        }
         // The highest bit rate of the AAC files: what re-encoded AAC is written at by default
         let aacBitRate = files.filter(\.info.isAAC).compactMap(\.info.bitRate).max()
         return SourceAudioInfo(formatID: first.formatID, bitDepth: bitDepth,
-                               isFloat: lossless.contains(where: \.info.isFloat),
+                               isFloat: isFloat,
                                sampleRate: sampleRate, channelCount: channelCount, duration: duration, bitRate: aacBitRate,
                                fileSize: files.compactMap(\.info.fileSize).reduce(0, +))
     }
@@ -154,14 +153,27 @@ final class SourceReader {
 
     private func readDirectly(_ file: AudioSource.File, _ range: Range<AVAudioFramePosition>,
                               buffer: AVAudioPCMBuffer, _ body: (AVAudioPCMBuffer) throws -> Void) throws {
-        let input = try AVAudioFile(forReading: file.url, commonFormat: processingFormat.commonFormat, interleaved: false)
+        // Core Audio converts integer samples to Float64 by way of Float32, which rounds 32-bit samples. So an
+        // integer file is read as Int32 and widened here.
+        let widensIntegers = processingFormat.commonFormat == .pcmFormatFloat64 && file.info.isLossless && !file.info.isFloat
+        let input = try AVAudioFile(forReading: file.url,
+                                    commonFormat: widensIntegers ? .pcmFormatInt32 : processingFormat.commonFormat,
+                                    interleaved: false)
+        let integers = widensIntegers ? AVAudioPCMBuffer(pcmFormat: input.processingFormat, frameCapacity: buffer.frameCapacity) : nil
+        if widensIntegers, integers == nil { throw AudioError.bufferAllocationFailed }
         var delivered = 0
         if range.lowerBound < input.length {
             input.framePosition = range.lowerBound
             var remaining = min(range.count, Int(input.length - range.lowerBound))
             while remaining > 0 {
                 try Task.checkCancellation()
-                try input.read(into: buffer, frameCount: AVAudioFrameCount(min(Int(buffer.frameCapacity), remaining)))
+                let count = AVAudioFrameCount(min(Int(buffer.frameCapacity), remaining))
+                if let integers {
+                    try input.read(into: integers, frameCount: count)
+                    Self.widen(integers, into: buffer)
+                } else {
+                    try input.read(into: buffer, frameCount: count)
+                }
                 if buffer.frameLength == 0 { break }
                 remaining -= Int(buffer.frameLength)
                 delivered += Int(buffer.frameLength)
@@ -224,6 +236,18 @@ final class SourceReader {
             if status == .endOfStream { break }
         }
         try pad(remaining, buffer: buffer, body)
+    }
+
+    /// Copies Int32 samples into a Float64 buffer of the same channel count, exactly
+    private static func widen(_ source: AVAudioPCMBuffer, into target: AVAudioPCMBuffer) {
+        let frames = Int(source.frameLength)
+        target.frameLength = source.frameLength
+        guard let from = source.int32ChannelData else { return }
+        let to = UnsafeMutableAudioBufferListPointer(target.mutableAudioBufferList)
+        for channel in 0..<Int(source.format.channelCount) {
+            guard let data = to[channel].mData?.assumingMemoryBound(to: Double.self) else { continue }
+            for i in 0..<frames { data[i] = Double(from[channel][i]) / 2_147_483_648 }
+        }
     }
 
     private func pad(_ frames: Int, buffer: AVAudioPCMBuffer, _ body: (AVAudioPCMBuffer) throws -> Void) throws {
