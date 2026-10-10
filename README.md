@@ -121,6 +121,11 @@ Run the tests with:
 swift test
 ```
 
+- `TrackCutCoreTests`: analysis, silence detection, fades, export and tags
+- `TrackCutTests`: the app's editing, undo, mouse handling of the waveform and keyboard shortcuts. They drive `EditorModel` and the waveform view directly, with synthesized events in windows that are never shown
+
+`build-app.sh` also checks that the binary records SDK 26 or later, which the Liquid Glass design depends on.
+
 With only the Command Line Tools installed (no Xcode), the Swift Testing macro plugin is not found by default. Pass its path explicitly:
 
 ```sh

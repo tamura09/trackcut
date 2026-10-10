@@ -11,6 +11,13 @@ swift build -c release -Xswiftc -Xclang-linker -Xswiftc -isysroot -Xswiftc -Xcla
 BIN="$(swift build -c release --show-bin-path)/TrackCut"
 APP="build/TrackCut.app"
 
+# Fail rather than ship the old look if the flags above stop working
+RECORDED_SDK="$(otool -l "$BIN" | awk '/LC_BUILD_VERSION/ { found = 1 } found && $1 == "sdk" { print $2; exit }')"
+if (( ${${RECORDED_SDK%%.*}:-0} < 26 )); then
+    echo "error: the binary records SDK ${RECORDED_SDK:-(none)}, but the Liquid Glass design needs 26 or later" >&2
+    exit 1
+fi
+
 rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS"
 cp "$BIN" "$APP/Contents/MacOS/TrackCut"

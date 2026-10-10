@@ -26,7 +26,7 @@ final class WaveformNSView: NSView {
     enum Mode { case detail, overview }
 
     /// A fade handle of the selected track
-    private struct FadeHandle {
+    struct FadeHandle {
         let trackID: Track.ID
         let edge: FadeEdge
     }
@@ -112,7 +112,7 @@ final class WaveformNSView: NSView {
     }
 
     /// Centres of the selected track's fade handles: at the end of the fade-in and the start of the fade-out
-    private func fadeHandleCenters(_ editor: EditorModel) -> [(handle: FadeHandle, center: NSPoint)] {
+    func fadeHandleCenters(_ editor: EditorModel) -> [(handle: FadeHandle, center: NSPoint)] {
         guard mode == .detail, let i = editor.selectedIndex else { return [] }
         let envelope = editor.envelope(ofTrackAt: i)
         let start = editor.tracks[i].start, end = editor.end(ofTrackAt: i)

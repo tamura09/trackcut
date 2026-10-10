@@ -25,9 +25,11 @@ final class EditorModel: ObservableObject {
 
     let player = PlayerModel()
     /// The editor window. Set by the detail waveform view.
-    weak var window: NSWindow?
-    /// The window's undo manager, which the Edit menu and ⌘Z use
-    var undoManager: UndoManager? { window?.undoManager }
+    weak var window: NSWindow? {
+        didSet { undoManager = window?.undoManager }
+    }
+    /// The window's undo manager, which the Edit menu and ⌘Z use. Tests set one of their own.
+    weak var undoManager: UndoManager?
     private var loadTask: Task<Void, Never>?
     /// Identifies the latest open(). Results from earlier loads are dropped by comparing against it;
     /// the URL is not enough because the same file can be opened again while it is still loading.
@@ -36,7 +38,8 @@ final class EditorModel: ObservableObject {
 
     var duration: Double { peaks?.duration ?? 0 }
 
-    private init() {
+    /// The app uses `shared`; tests make their own
+    init() {
         player.$currentTime
             .sink { [weak self] t in MainActor.assumeIsolated { self?.followPlayhead(t) } }
             .store(in: &cancellables)
