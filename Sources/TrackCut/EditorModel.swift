@@ -23,6 +23,8 @@ final class EditorModel: ObservableObject {
     static let shared = EditorModel()
 
     let player = PlayerModel()
+    /// The window's undo manager, which the Edit menu and ⌘Z use. Set by the detail waveform view.
+    weak var undoManager: UndoManager?
     private var loadTask: Task<Void, Never>?
     /// Identifies the latest open(). Results from earlier loads are dropped by comparing against it;
     /// the URL is not enough because the same file can be opened again while it is still loading.
@@ -62,6 +64,7 @@ final class EditorModel: ObservableObject {
         // Only cancel the previous analysis once the new file has opened. Cancelling first would
         // leave the window stuck on the progress view when the new file fails to open.
         loadTask?.cancel()
+        undoManager?.removeAllActions()
         let id = UUID()
         loadID = id
         sourceURL = url
@@ -117,6 +120,62 @@ final class EditorModel: ObservableObject {
         errorMessage = "波形を読み込めませんでした: \(error.localizedDescription)"
     }
 
+    // MARK: - Undo
+
+    /// The part of the state that undo restores
+    struct Snapshot {
+        var tracks: [Track]
+        var selectedTrackID: Track.ID?
+    }
+
+    var snapshot: Snapshot { Snapshot(tracks: tracks, selectedTrackID: selectedTrackID) }
+
+    /// Runs `change` as one undoable step
+    func performUndoable(_ actionName: String, _ change: () -> Void) {
+        let before = snapshot
+        change()
+        registerUndo(actionName, restoring: before)
+    }
+
+    /// Registers an undo step that goes back to `before`, if anything changed since. Used directly for
+    /// edits made over several events, such as dragging a split point.
+    func registerUndo(_ actionName: String, restoring before: Snapshot) {
+        guard before.tracks != tracks, let undoManager else { return }
+        undoManager.registerUndo(withTarget: self) { model in
+            model.restore(before, actionName: actionName)
+        }
+        undoManager.setActionName(actionName)
+    }
+
+    private var continuousEditStart: Snapshot?
+
+    /// Starts an edit made over several events (a drag, a slider). endContinuousEdit registers it as one step.
+    func beginContinuousEdit() {
+        continuousEditStart = snapshot
+    }
+
+    func endContinuousEdit(_ actionName: String) {
+        if let start = continuousEditStart { registerUndo(actionName, restoring: start) }
+        continuousEditStart = nil
+    }
+
+    private func restore(_ target: Snapshot, actionName: String) {
+        let current = snapshot
+        // Titles and artists are typed into text fields, which keep their own undo while editing, so an
+        // undo of a split keeps the names typed since then.
+        let names = Dictionary(uniqueKeysWithValues: current.tracks.map { ($0.id, ($0.title, $0.artist)) })
+        tracks = target.tracks.map { track in
+            var track = track
+            if let (title, artist) = names[track.id] {
+                track.title = title
+                track.artist = artist
+            }
+            return track
+        }
+        selectedTrackID = target.selectedTrackID
+        registerUndo(actionName, restoring: current)
+    }
+
     // MARK: - Tracks
 
     func index(of id: Track.ID?) -> Int? {
@@ -148,8 +207,10 @@ final class EditorModel: ObservableObject {
         if let i = trackIndex(containing: time) { selectedTrackID = tracks[i].id }
     }
 
+    var selectedIndex: Int? { index(of: selectedTrackID) }
+
     var canRemoveSelectedSplit: Bool {
-        (index(of: selectedTrackID) ?? 0) > 0
+        (selectedIndex ?? 0) > 0
     }
 
     func addSplit(at time: Double) {
@@ -157,23 +218,34 @@ final class EditorModel: ObservableObject {
               time > Self.minTrackLength, time < duration - Self.minTrackLength,
               !tracks.contains(where: { abs($0.start - time) < Self.minTrackLength })
         else { return }
-        let track = Track(start: time)
-        let i = tracks.firstIndex { $0.start > time } ?? tracks.endIndex
-        tracks.insert(track, at: i)
-        selectedTrackID = track.id
+        performUndoable("分割") {
+            var track = Track(start: time)
+            let i = tracks.firstIndex { $0.start > time } ?? tracks.endIndex
+            // The fade-out stays at the end of the original range, which now belongs to the new track
+            if i > 0 {
+                track.fadeOut = tracks[i - 1].fadeOut
+                tracks[i - 1].fadeOut = Fade(curve: track.fadeOut.curve)
+            }
+            tracks.insert(track, at: i)
+            selectedTrackID = track.id
+        }
     }
 
-    /// Removes a split point (the track is merged into the previous one)
+    /// Removes a split point (the track is merged into the previous one, which takes over its fade-out)
     func removeSplit(_ id: Track.ID) {
         guard let i = index(of: id), i > 0 else { return }
-        tracks.remove(at: i)
-        selectedTrackID = tracks[i - 1].id
+        performUndoable("分割点を削除") {
+            tracks[i - 1].fadeOut = tracks[i].fadeOut
+            tracks.remove(at: i)
+            selectedTrackID = tracks[i - 1].id
+        }
     }
 
     func removeSelectedSplit() {
         if let id = selectedTrackID { removeSplit(id) }
     }
 
+    /// Moves a split point without registering undo. Callers register one step for the whole drag.
     func moveSplit(_ id: Track.ID, to time: Double) {
         guard let i = index(of: id), i > 0 else { return }
         let lower = tracks[i - 1].start + Self.minTrackLength
@@ -181,14 +253,131 @@ final class EditorModel: ObservableObject {
         tracks[i].start = min(max(time, lower), upper)
     }
 
-    /// Replaces all split points. Titles, artists and the export selection are carried over by position.
-    func applySplits(_ times: [Double]) {
-        let old = tracks
-        tracks = ([0] + times.sorted()).enumerated().map { i, start in
-            guard i < old.count else { return Track(start: start) }
-            return Track(start: start, title: old[i].title, artist: old[i].artist, isEnabled: old[i].isEnabled)
+    /// Moves the split point at the start of the selected track by `seconds`
+    func nudgeSelectedSplit(by seconds: Double) {
+        guard let i = selectedIndex, i > 0 else { return }
+        performUndoable("分割点を移動") {
+            moveSplit(tracks[i].id, to: tracks[i].start + seconds)
         }
-        selectedTrackID = tracks.first?.id
+    }
+
+    /// Replaces all split points. Titles, artists, the export selection and fades are carried over by position.
+    func applySplits(_ times: [Double]) {
+        performUndoable("無音区間で分割") {
+            let old = tracks
+            tracks = ([0] + times.sorted()).enumerated().map { i, start in
+                guard i < old.count else { return Track(start: start) }
+                var track = old[i]
+                track.start = start
+                return track
+            }
+            selectedTrackID = tracks.first?.id
+        }
+    }
+
+    func setEnabled(_ isEnabled: Bool, for id: Track.ID) {
+        guard let i = index(of: id), tracks[i].isEnabled != isEnabled else { return }
+        performUndoable(isEnabled ? "書き出しに含める" : "書き出しから外す") {
+            tracks[i].isEnabled = isEnabled
+        }
+    }
+
+    func toggleSelectedEnabled() {
+        guard let i = selectedIndex else { return }
+        setEnabled(!tracks[i].isEnabled, for: tracks[i].id)
+    }
+
+    // MARK: - Fades
+
+    enum FadeEdge {
+        /// Fade-in at the start of the track
+        case start
+        /// Fade-out at the end of the track
+        case end
+
+        var actionName: String { self == .start ? "フェードイン" : "フェードアウト" }
+    }
+
+    func fade(_ edge: FadeEdge, ofTrackAt i: Int) -> Fade {
+        edge == .start ? tracks[i].fadeIn : tracks[i].fadeOut
+    }
+
+    /// The fades of a track as they are applied, shortened when the track is shorter than both together
+    func envelope(ofTrackAt i: Int) -> FadeEnvelope {
+        FadeEnvelope(length: end(ofTrackAt: i) - tracks[i].start, fadeIn: tracks[i].fadeIn, fadeOut: tracks[i].fadeOut)
+    }
+
+    /// Sets a fade's length without registering undo, limited so it does not overlap the other fade
+    func setFadeDuration(_ edge: FadeEdge, _ duration: Double, ofTrackAt i: Int) {
+        let length = end(ofTrackAt: i) - tracks[i].start
+        let other = fade(edge == .start ? .end : .start, ofTrackAt: i).duration
+        let clamped = min(max(duration, 0), max(length - other, 0))
+        switch edge {
+        case .start: tracks[i].fadeIn.duration = clamped
+        case .end: tracks[i].fadeOut.duration = clamped
+        }
+    }
+
+    func setFadeCurve(_ edge: FadeEdge, _ curve: FadeCurve, ofTrackAt i: Int) {
+        performUndoable(edge.actionName + "のカーブ") {
+            switch edge {
+            case .start: tracks[i].fadeIn.curve = curve
+            case .end: tracks[i].fadeOut.curve = curve
+            }
+        }
+    }
+
+    /// Fades the track under `time` in from its start up to `time`, or out from `time` to its end
+    func setFade(_ edge: FadeEdge, at time: Double) {
+        guard let i = trackIndex(containing: time) else { return }
+        performUndoable(edge.actionName) {
+            let duration = edge == .start ? time - tracks[i].start : end(ofTrackAt: i) - time
+            setFadeDuration(edge, duration, ofTrackAt: i)
+            selectedTrackID = tracks[i].id
+        }
+    }
+
+    func removeFade(_ edge: FadeEdge, ofTrackAt i: Int) {
+        performUndoable(edge.actionName + "を解除") {
+            setFadeDuration(edge, 0, ofTrackAt: i)
+        }
+    }
+
+    /// Copies the fades of the given track to every track
+    func applyFadesToAllTracks(from i: Int) {
+        let fadeIn = tracks[i].fadeIn, fadeOut = tracks[i].fadeOut
+        performUndoable("フェードをすべてのトラックに適用") {
+            for j in tracks.indices {
+                tracks[j].fadeIn.curve = fadeIn.curve
+                tracks[j].fadeOut.curve = fadeOut.curve
+                tracks[j].fadeIn.duration = 0
+                tracks[j].fadeOut.duration = 0
+                setFadeDuration(.start, fadeIn.duration, ofTrackAt: j)
+                setFadeDuration(.end, fadeOut.duration, ofTrackAt: j)
+            }
+        }
+    }
+
+    // MARK: - Playhead
+
+    func seek(to time: Double) {
+        player.seek(to: time)
+        selectTrack(containing: player.currentTime)
+        reveal(player.currentTime)
+    }
+
+    func seek(by seconds: Double) {
+        seek(to: player.currentTime + seconds)
+    }
+
+    /// Selects the previous / next track and moves the playhead to its start. Going back from the middle
+    /// of a track returns to its start first.
+    func selectAdjacentTrack(_ offset: Int) {
+        guard let current = trackIndex(containing: player.currentTime) ?? selectedIndex else { return }
+        var target = current + offset
+        if offset < 0, player.currentTime - tracks[current].start > 1 { target = current }
+        guard tracks.indices.contains(target) else { return }
+        selectTrack(tracks[target].id, seek: true)
     }
 
     func exportSegments() -> [ExportSegment] {
@@ -202,7 +391,8 @@ final class EditorModel: ObservableObject {
                 tags.artist = tracks[i].artist
             }
             return ExportSegment(start: tracks[i].start, end: end(ofTrackAt: i),
-                                 fileBaseName: String(format: "%02d ", i + 1) + displayTitle(at: i), tags: tags)
+                                 fileBaseName: String(format: "%02d ", i + 1) + displayTitle(at: i), tags: tags,
+                                 fadeIn: tracks[i].fadeIn, fadeOut: tracks[i].fadeOut)
         }
     }
 
@@ -221,6 +411,13 @@ final class EditorModel: ObservableObject {
 
     func zoomToFit() {
         setVisible(start: 0, duration: max(duration, Self.minVisibleDuration))
+    }
+
+    /// Fits the selected track in the view with a little margin on both sides
+    func zoomToSelectedTrack() {
+        guard let i = selectedIndex else { return }
+        let start = tracks[i].start, length = end(ofTrackAt: i) - start
+        setVisible(start: start - length * 0.05, duration: max(length * 1.1, Self.minVisibleDuration))
     }
 
     func pan(by seconds: Double) {
