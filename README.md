@@ -64,7 +64,7 @@ A binary built this way shows the pre-Liquid Glass design: SwiftPM records the d
 - Drag: scrub
 - Double-click: add a split point
 - Drag a split point: move it
-- Drag the round handles at the top of the selected track: set the length of its fade-in and fade-out
+- Drag the round handles at the top of the selected track: set the length of its fade-in and fade-out. Where the two fades meet, the handles overlap: drag left to shorten the fade-in, right to shorten the fade-out
 - Right-click: add or delete a split point, fade in up to / out from the clicked point, remove a fade, or include / exclude the track from the export
 - Scroll: pan
 - ⌘ or ⌥ + scroll, or pinch: zoom

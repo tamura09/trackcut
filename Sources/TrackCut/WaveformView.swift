@@ -40,6 +40,9 @@ final class WaveformNSView: NSView {
 
     private var draggingTrackID: Track.ID?
     private var draggingFade: FadeHandle?
+    /// Set when the press is on both fade handles at once; the drag direction picks one
+    private var pendingFadeTrackID: Track.ID?
+    private var pressX: CGFloat = 0
     private var isScrubbing = false
     private let keyMonitor = KeyCommandMonitor()
     private let rulerHeight: CGFloat = 20
@@ -123,12 +126,12 @@ final class WaveformNSView: NSView {
         ]
     }
 
-    private func fadeHandle(at point: NSPoint) -> FadeHandle? {
-        guard let editor else { return nil }
+    /// The fade handles under `point`, nearest first
+    private func fadeHandles(at point: NSPoint) -> [(handle: FadeHandle, center: NSPoint)] {
+        guard let editor else { return [] }
         return fadeHandleCenters(editor)
-            .map { (handle: $0.handle, distance: hypot($0.center.x - point.x, $0.center.y - point.y)) }
-            .filter { $0.distance <= handleRadius + 3 }
-            .min { $0.distance < $1.distance }?.handle
+            .filter { hypot($0.center.x - point.x, $0.center.y - point.y) <= handleRadius + 3 }
+            .sorted { abs($0.center.x - point.x) < abs($1.center.x - point.x) }
     }
 
     // MARK: - Drawing
@@ -406,8 +409,16 @@ final class WaveformNSView: NSView {
             editor.addSplit(at: t)
             return
         }
-        if let handle = fadeHandle(at: p) {
-            draggingFade = handle
+        let handles = fadeHandles(at: p)
+        if let nearest = handles.first {
+            // When the fades meet, both handles are in the same place. Dragging left can only shorten the
+            // fade-in and dragging right only the fade-out, so the direction decides.
+            if handles.count == 2, abs(handles[0].center.x - handles[1].center.x) < handleRadius {
+                pendingFadeTrackID = nearest.handle.trackID
+            } else {
+                draggingFade = nearest.handle
+            }
+            pressX = p.x
             editor.beginContinuousEdit()
             NSCursor.closedHand.push()
             return
@@ -427,6 +438,10 @@ final class WaveformNSView: NSView {
         guard let editor, editor.peaks != nil else { return }
         let p = convert(event.locationInWindow, from: nil)
         let t = time(for: p.x)
+        if let id = pendingFadeTrackID, p.x != pressX {
+            draggingFade = FadeHandle(trackID: id, edge: p.x < pressX ? .start : .end)
+            pendingFadeTrackID = nil
+        }
 
         if mode == .overview {
             editor.centerVisible(on: t)
@@ -442,13 +457,14 @@ final class WaveformNSView: NSView {
     }
 
     override func mouseUp(with event: NSEvent) {
-        if let handle = draggingFade {
-            editor?.endContinuousEdit(handle.edge.actionName)
+        if draggingFade != nil || pendingFadeTrackID != nil {
+            editor?.endContinuousEdit((draggingFade?.edge ?? .start).actionName)
             NSCursor.pop()
         } else if draggingTrackID != nil {
             editor?.endContinuousEdit("分割点を移動")
         }
         draggingFade = nil
+        pendingFadeTrackID = nil
         draggingTrackID = nil
         isScrubbing = false
     }
