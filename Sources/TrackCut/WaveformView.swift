@@ -461,7 +461,7 @@ final class WaveformNSView: NSView {
             editor?.endContinuousEdit((draggingFade?.edge ?? .start).actionName)
             NSCursor.pop()
         } else if draggingTrackID != nil {
-            editor?.endContinuousEdit("分割点を移動")
+            editor?.endContinuousEdit(String(localized: "Move Split Point"))
         }
         draggingFade = nil
         pendingFadeTrackID = nil
@@ -475,23 +475,23 @@ final class WaveformNSView: NSView {
         let t = time(for: p.x)
         let menu = NSMenu()
         if let id = markerTrackID(near: p.x) {
-            menu.addItem(ClosureMenuItem(title: "この分割点を削除") { editor.removeSplit(id) })
+            menu.addItem(ClosureMenuItem(title: String(localized: "Delete This Split Point")) { editor.removeSplit(id) })
         } else {
-            menu.addItem(ClosureMenuItem(title: "ここで分割") { editor.addSplit(at: t) })
+            menu.addItem(ClosureMenuItem(title: String(localized: "Split Here")) { editor.addSplit(at: t) })
         }
         guard let i = editor.trackIndex(containing: t) else { return menu }
         let track = editor.tracks[i]
         menu.addItem(.separator())
-        menu.addItem(ClosureMenuItem(title: "ここまでフェードイン") { editor.setFade(.start, at: t) })
-        menu.addItem(ClosureMenuItem(title: "ここからフェードアウト") { editor.setFade(.end, at: t) })
+        menu.addItem(ClosureMenuItem(title: String(localized: "Fade In to Here")) { editor.setFade(.start, at: t) })
+        menu.addItem(ClosureMenuItem(title: String(localized: "Fade Out from Here")) { editor.setFade(.end, at: t) })
         if track.fadeIn.isEnabled {
-            menu.addItem(ClosureMenuItem(title: "フェードインを解除") { editor.removeFade(.start, ofTrackAt: i) })
+            menu.addItem(ClosureMenuItem(title: FadeEdge.start.removeActionName) { editor.removeFade(.start, ofTrackAt: i) })
         }
         if track.fadeOut.isEnabled {
-            menu.addItem(ClosureMenuItem(title: "フェードアウトを解除") { editor.removeFade(.end, ofTrackAt: i) })
+            menu.addItem(ClosureMenuItem(title: FadeEdge.end.removeActionName) { editor.removeFade(.end, ofTrackAt: i) })
         }
         menu.addItem(.separator())
-        let export = ClosureMenuItem(title: "このトラックを書き出す") { editor.setEnabled(!track.isEnabled, for: track.id) }
+        let export = ClosureMenuItem(title: String(localized: "Export This Track")) { editor.setEnabled(!track.isEnabled, for: track.id) }
         export.state = track.isEnabled ? .on : .off
         menu.addItem(export)
         return menu

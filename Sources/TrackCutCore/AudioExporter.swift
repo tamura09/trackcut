@@ -7,7 +7,7 @@ public enum ExportFormat: String, CaseIterable, Identifiable, Sendable {
 
     public var displayName: String {
         switch self {
-        case .sameAsSource: "元のファイルと同じ"
+        case .sameAsSource: String(localized: "Same as Source")
         case .wav: "WAV"
         case .flac: "FLAC"
         case .alac: "Apple Lossless (m4a)"
@@ -139,7 +139,7 @@ enum ResolvedFormat: Equatable {
             s[AVFormatIDKey] = kAudioFormatMPEG4AAC
             s[AVEncoderBitRateKey] = 256_000
         case .flac, .alac:
-            preconditionFailure("FLAC / ALAC は ExtAudioFileWriter で書き出す")
+            preconditionFailure("FLAC and ALAC are written by ExtAudioFileWriter")
         }
         if channels > 2, let layout {
             s[AVChannelLayoutKey] = Self.channelLayoutData(layout)

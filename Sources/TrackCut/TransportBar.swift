@@ -32,16 +32,16 @@ struct TransportBar: View {
     private var playback: some View {
         HStack(spacing: 2) {
             Button { editor.selectAdjacentTrack(-1) } label: { Image(systemName: "backward.end.fill") }
-                .help("前のトラックへ (↑)")
+                .help("Previous track (↑)")
             Button { player.toggle() } label: {
                 Image(systemName: player.isPlaying ? "pause.fill" : "play.fill")
                     .font(.system(size: 17, weight: .semibold))
                     .contentTransition(.symbolEffect(.replace))
             }
             .buttonStyle(GlassIconButtonStyle(size: 36))
-            .help("再生 / 一時停止 (Space)")
+            .help("Play / pause (Space)")
             Button { editor.selectAdjacentTrack(1) } label: { Image(systemName: "forward.end.fill") }
-                .help("次のトラックへ (↓)")
+                .help("Next track (↓)")
         }
         .padding(3)
         .glassSurface(in: Capsule(), interactive: true)
@@ -64,20 +64,20 @@ struct TransportBar: View {
     private var editing: some View {
         HStack(spacing: 2) {
             Button { editor.addSplit(at: player.currentTime) } label: { Image(systemName: "scissors") }
-                .help("再生位置で分割 (M)")
+                .help("Split at the playhead (M)")
             Button { editor.removeSelectedSplit() } label: {
                 Image(systemName: "arrow.right.and.line.vertical.and.arrow.left")
             }
-            .help("選択トラックの先頭の分割点を削除 (⌫)")
+            .help("Remove the split point at the start of the selected track (⌫)")
             .disabled(!editor.canRemoveSelectedSplit)
             Button { editor.setFade(.start, at: player.currentTime) } label: {
                 Image(systemName: "righttriangle.fill")
             }
-            .help("トラックの先頭から再生位置までフェードイン (I)")
+            .help("Fade in from the start of the track to the playhead (I)")
             Button { editor.setFade(.end, at: player.currentTime) } label: {
                 Image(systemName: "righttriangle.fill").scaleEffect(x: -1)
             }
-            .help("再生位置からトラックの末尾までフェードアウト (O)")
+            .help("Fade out from the playhead to the end of the track (O)")
         }
         .padding(3)
         .glassSurface(in: Capsule(), interactive: true)
@@ -86,11 +86,11 @@ struct TransportBar: View {
     private var zoom: some View {
         HStack(spacing: 2) {
             Button { editor.zoom(by: 2) } label: { Image(systemName: "minus.magnifyingglass") }
-                .help("縮小 (⌘-)")
+                .help("Zoom out (⌘-)")
             Button { editor.zoomToFit() } label: { Image(systemName: "arrow.left.and.right.square") }
-                .help("全体を表示 (⌘0)")
+                .help("Zoom to fit (⌘0)")
             Button { editor.zoom(by: 0.5) } label: { Image(systemName: "plus.magnifyingglass") }
-                .help("拡大 (⌘=) — ⌘ + スクロールやピンチでも可")
+                .help("Zoom in (⌘=), or ⌘ + scroll, or pinch")
         }
         .padding(3)
         .glassSurface(in: Capsule(), interactive: true)

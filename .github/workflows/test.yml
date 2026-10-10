@@ -48,6 +48,10 @@ jobs:
       - name: Test
         run: swift test
 
+      # Every localizable string in the code needs a Japanese translation
+      - name: Check localizations
+        run: ./check-localizations.sh
+
       # Builds the release binary and the app bundle the README tells users to
       # run. build-app.sh also fails when the binary records an SDK too old for
       # the Liquid Glass design.

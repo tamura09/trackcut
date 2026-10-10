@@ -33,10 +33,16 @@ if (( ${${RECORDED_SDK%%.*}:-0} < 26 )); then
 fi
 
 rm -rf "$APP"
-mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Frameworks"
+mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Frameworks" "$APP/Contents/Resources"
 cp "$BIN" "$APP/Contents/MacOS/TrackCut"
 # ditto keeps the framework's symlinks and Sparkle's own signature on it and its helpers
 ditto "$BIN_DIR/Sparkle.framework" "$APP/Contents/Frameworks/Sparkle.framework"
+# Both targets look their strings up in the main bundle, so the tables go into the app's own Resources.
+# English is the text in the code; en.lproj only adds singular forms.
+for lproj in Localizations/*.lproj; do
+    ditto "$lproj" "$APP/Contents/Resources/${lproj:t}"
+    plutil -convert binary1 "$APP/Contents/Resources/${lproj:t}"/*
+done
 
 # The icon is an Icon Composer file. actool turns it into Assets.car, which macOS 26 and later draw with
 # Liquid Glass, and AppIcon.icns for older systems. actool ships with Xcode only, so fall back to
@@ -44,7 +50,6 @@ ditto "$BIN_DIR/Sparkle.framework" "$APP/Contents/Frameworks/Sparkle.framework"
 if ! xcrun --find actool >/dev/null 2>&1 && [[ -z "${DEVELOPER_DIR:-}" && -d /Applications/Xcode.app ]]; then
     export DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer
 fi
-mkdir -p "$APP/Contents/Resources"
 xcrun actool AppIcon.icon --compile "$APP/Contents/Resources" --platform macosx \
     --minimum-deployment-target 15.0 --app-icon AppIcon \
     --output-partial-info-plist build/AppIcon-partial.plist >/dev/null
@@ -54,7 +59,12 @@ cat > "$APP/Contents/Info.plist" <<PLIST
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
-    <key>CFBundleDevelopmentRegion</key><string>ja</string>
+    <key>CFBundleDevelopmentRegion</key><string>en</string>
+    <key>CFBundleLocalizations</key>
+    <array>
+        <string>en</string>
+        <string>ja</string>
+    </array>
     <key>CFBundleName</key><string>TrackCut</string>
     <key>CFBundleDisplayName</key><string>TrackCut</string>
     <key>CFBundleIdentifier</key><string>com.9tmr.TrackCut</string>

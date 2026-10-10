@@ -1,0 +1,79 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!-- Japanese for the strings with a count. They are here rather than in Localizable.strings because the
+     English Localizable.stringsdict has the same keys, and a bundle may take a key from another
+     language's .stringsdict before this language's .strings. Japanese has only the "other" plural form. -->
+<plist version="1.0">
+<dict>
+    <key>%lld tracks · %@</key>
+    <dict>
+        <key>NSStringLocalizedFormatKey</key><string>%1$#@tracks@ · %2$@</string>
+        <key>tracks</key>
+        <dict>
+            <key>NSStringFormatSpecTypeKey</key><string>NSStringPluralRuleType</string>
+            <key>NSStringFormatValueTypeKey</key><string>lld</string>
+            <key>other</key><string>%1$lld トラック</string>
+        </dict>
+    </dict>
+    <key>%lld tracks (%lld exported) · %@</key>
+    <dict>
+        <key>NSStringLocalizedFormatKey</key><string>%1$#@tracks@（書き出し %2$lld）· %3$@</string>
+        <key>tracks</key>
+        <dict>
+            <key>NSStringFormatSpecTypeKey</key><string>NSStringPluralRuleType</string>
+            <key>NSStringFormatValueTypeKey</key><string>lld</string>
+            <key>other</key><string>%1$lld トラック</string>
+        </dict>
+    </dict>
+    <key>Results in %lld tracks. The current split points are replaced.</key>
+    <dict>
+        <key>NSStringLocalizedFormatKey</key><string>%#@tracks@</string>
+        <key>tracks</key>
+        <dict>
+            <key>NSStringFormatSpecTypeKey</key><string>NSStringPluralRuleType</string>
+            <key>NSStringFormatValueTypeKey</key><string>lld</string>
+            <key>other</key><string>%lld 曲に分割されます（現在の分割点は置き換えられます）</string>
+        </dict>
+    </dict>
+    <key>Exports %lld tracks as files named “01 Title”, tagged with the title, track number and album info</key>
+    <dict>
+        <key>NSStringLocalizedFormatKey</key><string>%#@message@</string>
+        <key>message</key>
+        <dict>
+            <key>NSStringFormatSpecTypeKey</key><string>NSStringPluralRuleType</string>
+            <key>NSStringFormatValueTypeKey</key><string>lld</string>
+            <key>other</key><string>%lld 曲を「01 タイトル」形式のファイル名で書き出し、タイトル・トラック番号・アルバム情報のタグを書き込みます</string>
+        </dict>
+    </dict>
+    <key>Applies fades to %lld tracks. They are re-encoded even when AAC is otherwise cut as is</key>
+    <dict>
+        <key>NSStringLocalizedFormatKey</key><string>%#@message@</string>
+        <key>message</key>
+        <dict>
+            <key>NSStringFormatSpecTypeKey</key><string>NSStringPluralRuleType</string>
+            <key>NSStringFormatValueTypeKey</key><string>lld</string>
+            <key>other</key><string>%lld 曲にフェードを適用します。AAC をそのまま切り出す場合も、フェードのある曲は再エンコードされます</string>
+        </dict>
+    </dict>
+    <key>Exported %lld files</key>
+    <dict>
+        <key>NSStringLocalizedFormatKey</key><string>%#@files@</string>
+        <key>files</key>
+        <dict>
+            <key>NSStringFormatSpecTypeKey</key><string>NSStringPluralRuleType</string>
+            <key>NSStringFormatValueTypeKey</key><string>lld</string>
+            <key>other</key><string>%lld ファイルを書き出しました</string>
+        </dict>
+    </dict>
+    <key>%lld files already exist. Do you want to replace them?</key>
+    <dict>
+        <key>NSStringLocalizedFormatKey</key><string>%#@message@</string>
+        <key>message</key>
+        <dict>
+            <key>NSStringFormatSpecTypeKey</key><string>NSStringPluralRuleType</string>
+            <key>NSStringFormatValueTypeKey</key><string>lld</string>
+            <key>other</key><string>%lld 個のファイルが既に存在します。上書きしますか？</string>
+        </dict>
+    </dict>
+</dict>
+</plist>

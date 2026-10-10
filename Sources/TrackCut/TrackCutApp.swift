@@ -7,6 +7,7 @@ struct TrackCutApp: App {
     @ObservedObject private var editor = EditorModel.shared
     @ObservedObject private var sheets = SheetState.shared
     @ObservedObject private var updater = AppUpdater.shared
+    @ObservedObject private var language = LanguageSettings.shared
     @AppStorage("showsInspector") private var showsInspector = true
 
     init() {
@@ -27,6 +28,10 @@ struct TrackCutApp: App {
         .defaultLaunchBehavior(.presented)
         .restorationBehavior(.disabled)
         .commands { commands }
+
+        Settings {
+            SettingsView(language: language, editor: editor)
+        }
     }
 
     // Single-key shortcuts (Space, M, I, O, ...) are not menu key equivalents; see KeyCommands.
@@ -34,60 +39,60 @@ struct TrackCutApp: App {
     private var commands: some Commands {
         let isLoaded = editor.peaks != nil
         CommandGroup(after: .appInfo) {
-            Button("アップデートを確認…") { updater.checkForUpdates() }
+            Button("Check for Updates…") { updater.checkForUpdates() }
                 .disabled(!updater.canCheckForUpdates)
         }
         CommandGroup(replacing: .newItem) {
-            Button("開く…") { editor.presentOpenPanel() }
+            Button("Open…") { editor.presentOpenPanel() }
                 .keyboardShortcut("o")
         }
         CommandGroup(after: .newItem) {
             Divider()
-            Button("書き出し…") { sheets.showsExport = true }
+            Button("Export…") { sheets.showsExport = true }
                 .keyboardShortcut("e")
                 .disabled(!isLoaded)
         }
-        CommandMenu("トラック") {
+        CommandMenu("Track") {
             Group {
-                Button("再生位置で分割") { editor.addSplit(at: editor.player.currentTime) }
-                Button("分割点を削除") { editor.removeSelectedSplit() }
+                Button("Split at Playhead") { editor.addSplit(at: editor.player.currentTime) }
+                Button("Delete Split Point") { editor.removeSelectedSplit() }
                     .disabled(!editor.canRemoveSelectedSplit)
-                Button("無音区間で分割…") { sheets.showsSilence = true }
+                Button("Split at Silences…") { sheets.showsSilence = true }
                     .keyboardShortcut("d", modifiers: [.command, .shift])
                 Divider()
-                Button("再生位置までフェードイン") { editor.setFade(.start, at: editor.player.currentTime) }
-                Button("再生位置からフェードアウト") { editor.setFade(.end, at: editor.player.currentTime) }
-                Button("フェードをすべてのトラックに適用") {
+                Button("Fade In to Playhead") { editor.setFade(.start, at: editor.player.currentTime) }
+                Button("Fade Out from Playhead") { editor.setFade(.end, at: editor.player.currentTime) }
+                Button("Apply Fades to All Tracks") {
                     if let i = editor.selectedIndex { editor.applyFadesToAllTracks(from: i) }
                 }
                 .disabled(editor.selectedIndex == nil)
                 Divider()
-                Button("前のトラック") { editor.selectAdjacentTrack(-1) }
-                Button("次のトラック") { editor.selectAdjacentTrack(1) }
-                Button("選択トラックを書き出す / 書き出さない") { editor.toggleSelectedEnabled() }
+                Button("Previous Track") { editor.selectAdjacentTrack(-1) }
+                Button("Next Track") { editor.selectAdjacentTrack(1) }
+                Button("Include / Exclude Selected Track") { editor.toggleSelectedEnabled() }
             }
             .disabled(!isLoaded)
         }
         CommandGroup(before: .toolbar) {
-            Button("拡大") { editor.zoom(by: 0.5) }
+            Button("Zoom In") { editor.zoom(by: 0.5) }
                 .keyboardShortcut("=")
                 .disabled(!isLoaded)
-            Button("縮小") { editor.zoom(by: 2) }
+            Button("Zoom Out") { editor.zoom(by: 2) }
                 .keyboardShortcut("-")
                 .disabled(!isLoaded)
-            Button("全体を表示") { editor.zoomToFit() }
+            Button("Zoom to Fit") { editor.zoomToFit() }
                 .keyboardShortcut("0")
                 .disabled(!isLoaded)
-            Button("選択トラックに合わせて拡大") { editor.zoomToSelectedTrack() }
+            Button("Zoom to Selected Track") { editor.zoomToSelectedTrack() }
                 .disabled(!isLoaded)
             Divider()
-            Button(showsInspector ? "インスペクタを隠す" : "インスペクタを表示") { showsInspector.toggle() }
+            Button(showsInspector ? String(localized: "Hide Inspector") : String(localized: "Show Inspector")) { showsInspector.toggle() }
                 .keyboardShortcut("i", modifiers: [.command, .option])
                 .disabled(!isLoaded)
             Divider()
         }
         CommandGroup(replacing: .help) {
-            Button("キーボードショートカット") { sheets.showsShortcuts = true }
+            Button("Keyboard Shortcuts") { sheets.showsShortcuts = true }
                 .keyboardShortcut("/")
         }
     }

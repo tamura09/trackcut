@@ -15,27 +15,27 @@ struct SilenceDetectionSheet: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
-            Text("無音区間で分割").font(.headline)
+            Text("Split at Silences").font(.headline)
             Form {
-                LabeledContent("しきい値") {
+                LabeledContent("Threshold") {
                     HStack {
                         Slider(value: $thresholdDB, in: -80...(-20), step: 1)
                         Text("\(Int(thresholdDB)) dB").monospacedDigit().frame(width: 56, alignment: .trailing)
                     }
                 }
-                LabeledContent("最短の無音") {
+                LabeledContent("Minimum gap") {
                     HStack {
                         Slider(value: $minDuration, in: 0.3...5, step: 0.1)
-                        Text(String(format: "%.1f 秒", minDuration)).monospacedDigit().frame(width: 56, alignment: .trailing)
+                        Text("\(minDuration, specifier: "%.1f") s").monospacedDigit().frame(width: 56, alignment: .trailing)
                     }
                 }
             }
-            Text("\(splits.count + 1) 曲に分割されます（現在の分割点は置き換えられます）")
+            Text("Results in \(splits.count + 1) tracks. The current split points are replaced.")
                 .foregroundStyle(.secondary)
             HStack {
                 Spacer()
-                Button("キャンセル") { dismiss() }.keyboardShortcut(.cancelAction)
-                Button("適用") {
+                Button("Cancel") { dismiss() }.keyboardShortcut(.cancelAction)
+                Button("Apply") {
                     editor.applySplits(splits)
                     dismiss()
                 }
@@ -66,16 +66,16 @@ struct ExportSheet: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
-            Text("曲ごとに書き出し").font(.headline)
-            Picker("形式", selection: $formatRaw) {
+            Text("Export Tracks").font(.headline)
+            Picker("Format", selection: $formatRaw) {
                 ForEach(ExportFormat.allCases) { Text($0.displayName).tag($0.rawValue) }
             }
             .disabled(state.progress != nil)
-            Text("\(editor.exportSegments().count) 曲を「01 タイトル」形式のファイル名で書き出し、タイトル・トラック番号・アルバム情報のタグを書き込みます")
+            Text("Exports \(editor.exportSegments().count) tracks as files named “01 Title”, tagged with the title, track number and album info")
                 .fixedSize(horizontal: false, vertical: true)
                 .foregroundStyle(.secondary)
             if fadedCount > 0 {
-                Label("\(fadedCount) 曲にフェードを適用します。AAC をそのまま切り出す場合も、フェードのある曲は再エンコードされます",
+                Label("Applies fades to \(fadedCount) tracks. They are re-encoded even when AAC is otherwise cut as is",
                       systemImage: "waveform.path")
                     .fixedSize(horizontal: false, vertical: true)
                     .foregroundStyle(.secondary)
@@ -89,18 +89,18 @@ struct ExportSheet: View {
             }
             if !state.exportedURLs.isEmpty {
                 HStack {
-                    Text("\(state.exportedURLs.count) ファイルを書き出しました")
-                    Button("Finder で表示") { NSWorkspace.shared.activateFileViewerSelecting(state.exportedURLs) }
+                    Text("Exported \(state.exportedURLs.count) files")
+                    Button("Show in Finder") { NSWorkspace.shared.activateFileViewerSelecting(state.exportedURLs) }
                 }
             }
 
             HStack {
                 Spacer()
                 if state.progress != nil {
-                    Button("中止") { state.exportTask?.cancel() }.keyboardShortcut(.cancelAction)
+                    Button("Stop") { state.exportTask?.cancel() }.keyboardShortcut(.cancelAction)
                 } else {
-                    Button("閉じる") { dismiss() }.keyboardShortcut(.cancelAction)
-                    Button("書き出し先を選んで書き出す…") { chooseAndExport() }
+                    Button("Close") { dismiss() }.keyboardShortcut(.cancelAction)
+                    Button("Choose Folder and Export…") { chooseAndExport() }
                         .keyboardShortcut(.defaultAction)
                         .disabled(editor.exportSegments().isEmpty)
                 }
@@ -116,7 +116,7 @@ struct ExportSheet: View {
         panel.canChooseFiles = false
         panel.canChooseDirectories = true
         panel.canCreateDirectories = true
-        panel.prompt = "書き出し"
+        panel.prompt = String(localized: "Export")
         panel.directoryURL = source.deletingLastPathComponent()
         guard panel.runModal() == .OK, let directory = panel.url else { return }
 
@@ -135,10 +135,10 @@ struct ExportSheet: View {
             }
             if !existing.isEmpty {
                 let alert = NSAlert()
-                alert.messageText = "\(existing.count) 個のファイルが既に存在します。上書きしますか？"
+                alert.messageText = String(localized: "\(existing.count) files already exist. Do you want to replace them?")
                 alert.informativeText = existing.prefix(5).map(\.lastPathComponent).joined(separator: "\n")
-                alert.addButton(withTitle: "上書き")
-                alert.addButton(withTitle: "キャンセル")
+                alert.addButton(withTitle: String(localized: "Replace"))
+                alert.addButton(withTitle: String(localized: "Cancel"))
                 guard alert.runModal() == .alertFirstButtonReturn else { return }
             }
         } catch {
@@ -157,7 +157,7 @@ struct ExportSheet: View {
                     }
                 }
             } catch is CancellationError {
-                state.errorText = "中止しました"
+                state.errorText = String(localized: "Export stopped.")
             } catch {
                 state.errorText = error.localizedDescription
             }
@@ -178,10 +178,10 @@ struct ShortcutsSheet: View {
                         column(KeyCommands.sections.prefix(2))
                         VStack(alignment: .leading, spacing: 20) {
                             column(KeyCommands.sections.dropFirst(2))
-                            ShortcutGroup(title: "メニュー", rows: KeyCommands.menuShortcuts)
+                            ShortcutGroup(title: String(localized: "Menu"), rows: KeyCommands.menuShortcuts)
                         }
                     }
-                    Text("1 文字のショートカットは、テキストフィールドへの入力中を除き、ウインドウのどこでも使えます。")
+                    Text("Single-key shortcuts work anywhere in the window except while typing in a text field.")
                         .font(.callout)
                         .foregroundStyle(.secondary)
                 }
@@ -189,7 +189,7 @@ struct ShortcutsSheet: View {
             }
             HStack {
                 Spacer()
-                Button("閉じる") { dismiss() }
+                Button("Close") { dismiss() }
                     .keyboardShortcut(.defaultAction)
             }
             .padding(16)

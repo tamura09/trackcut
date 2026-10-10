@@ -1,0 +1,186 @@
+/* Japanese strings. The keys are the English text in the source code. Strings with a count are in
+   Localizable.stringsdict instead. check-localizations.sh fails when a key in the code is missing from
+   both, or when a key is no longer used. */
+
+/* Window and toolbar */
+"TrackCut" = "TrackCut";
+"Error" = "エラー";
+"OK" = "OK";
+"Open" = "開く";
+"Open (⌘O)" = "開く (⌘O)";
+"Open…" = "開く…";
+"Detect Silence" = "無音検出";
+"Detect split points from silent gaps (⇧⌘D)" = "無音区間から分割点を自動検出 (⇧⌘D)";
+"Export" = "書き出し";
+"Export each track to its own file (⌘E)" = "曲ごとに書き出し (⌘E)";
+"Inspector" = "インスペクタ";
+"Show / hide the inspector (⌥⌘I)" = "インスペクタを表示 / 隠す (⌥⌘I)";
+"Drop a File to Get Started" = "ファイルをドロップして開始";
+"Supports FLAC, M4A and WAV" = "FLAC / M4A / WAV に対応しています";
+"Analyzing Waveform…" = "波形を解析中…";
+
+/* Track list */
+"Title" = "タイトル";
+"Artist" = "アーティスト";
+"Fades" = "フェード";
+"Start" = "開始";
+"Length" = "長さ";
+"Include in export (E)" = "書き出す (E)";
+
+/* Transport bar */
+"Previous track (↑)" = "前のトラックへ (↑)";
+"Play / pause (Space)" = "再生 / 一時停止 (Space)";
+"Next track (↓)" = "次のトラックへ (↓)";
+"Split at the playhead (M)" = "再生位置で分割 (M)";
+"Remove the split point at the start of the selected track (⌫)" = "選択トラックの先頭の分割点を削除 (⌫)";
+"Fade in from the start of the track to the playhead (I)" = "トラックの先頭から再生位置までフェードイン (I)";
+"Fade out from the playhead to the end of the track (O)" = "再生位置からトラックの末尾までフェードアウト (O)";
+"Zoom out (⌘-)" = "縮小 (⌘-)";
+"Zoom to fit (⌘0)" = "全体を表示 (⌘0)";
+"Zoom in (⌘=), or ⌘ + scroll, or pinch" = "拡大 (⌘=) — ⌘ + スクロールやピンチでも可";
+
+/* Inspector */
+"Track %lld" = "トラック %lld";
+"Same as album" = "アルバムと同じ";
+"Include in Export" = "書き出しに含める";
+"Apply These Fades to All Tracks" = "このフェードをすべてのトラックに適用";
+"Fade-In" = "フェードイン";
+"Fade-Out" = "フェードアウト";
+"Seconds" = "秒";
+"s" = "秒";
+"Curve" = "カーブ";
+"Shortened to fit the track" = "トラックより長いため短縮して適用されます";
+"Album" = "アルバム";
+"Album Artist" = "アルバムアーティスト";
+"Year" = "年";
+"Genre" = "ジャンル";
+
+/* Fade curves */
+"Linear" = "リニア";
+"Equal Power" = "等パワー";
+"S-Curve" = "S カーブ";
+"Exponential" = "エクスポネンシャル";
+
+/* Waveform context menu */
+"Delete This Split Point" = "この分割点を削除";
+"Split Here" = "ここで分割";
+"Fade In to Here" = "ここまでフェードイン";
+"Fade Out from Here" = "ここからフェードアウト";
+"Export This Track" = "このトラックを書き出す";
+
+/* Menu bar */
+"Check for Updates…" = "アップデートを確認…";
+"Export…" = "書き出し…";
+"Track" = "トラック";
+"Split at Playhead" = "再生位置で分割";
+"Delete Split Point" = "分割点を削除";
+"Split at Silences…" = "無音区間で分割…";
+"Fade In to Playhead" = "再生位置までフェードイン";
+"Fade Out from Playhead" = "再生位置からフェードアウト";
+"Apply Fades to All Tracks" = "フェードをすべてのトラックに適用";
+"Previous Track" = "前のトラック";
+"Next Track" = "次のトラック";
+"Include / Exclude Selected Track" = "選択トラックを書き出す / 書き出さない";
+"Zoom In" = "拡大";
+"Zoom Out" = "縮小";
+"Zoom to Fit" = "全体を表示";
+"Zoom to Selected Track" = "選択トラックに合わせて拡大";
+"Show Inspector" = "インスペクタを表示";
+"Hide Inspector" = "インスペクタを隠す";
+"Keyboard Shortcuts" = "キーボードショートカット";
+
+/* Settings */
+"Language" = "言語";
+"System Default" = "システム設定に従う";
+"TrackCut switches to the new language when it relaunches." = "新しい言語は TrackCut の再起動後に反映されます。";
+"Relaunch Now" = "今すぐ再起動";
+"Relaunch TrackCut now?" = "TrackCut を今すぐ再起動しますか？";
+"The open file is closed, and its split points are not kept." = "開いているファイルは閉じられ、分割点は保持されません。";
+"Relaunch" = "再起動";
+
+/* Undo action names */
+"Change Title" = "タイトルの変更";
+"Change Artist" = "アーティストの変更";
+"Change Album Info" = "アルバム情報の変更";
+"Split" = "分割";
+"Move Split Point" = "分割点を移動";
+"Split at Silences" = "無音区間で分割";
+"Exclude from Export" = "書き出しから外す";
+"Fade In" = "フェードイン";
+"Fade Out" = "フェードアウト";
+"Change Fade-In Curve" = "フェードインのカーブ";
+"Change Fade-Out Curve" = "フェードアウトのカーブ";
+"Remove Fade-In" = "フェードインを解除";
+"Remove Fade-Out" = "フェードアウトを解除";
+
+/* Keyboard shortcuts sheet */
+"Playback" = "再生";
+"Play / pause" = "再生 / 一時停止";
+"Back 1 second" = "1 秒戻る";
+"Forward 1 second" = "1 秒進む";
+"Back 10 seconds" = "10 秒戻る";
+"Forward 10 seconds" = "10 秒進む";
+"Previous track" = "前のトラックへ";
+"Next track" = "次のトラックへ";
+"Go to the start" = "先頭へ";
+"Go to the end" = "末尾へ";
+"Splitting" = "分割";
+"Split at the playhead" = "再生位置で分割";
+"Remove the split point at the start of the selected track" = "選択トラックの先頭の分割点を削除";
+"Move that split point 10 ms earlier" = "分割点を 10 ミリ秒前へ";
+"Move that split point 10 ms later" = "分割点を 10 ミリ秒後ろへ";
+"Move that split point 100 ms earlier" = "分割点を 100 ミリ秒前へ";
+"Move that split point 100 ms later" = "分割点を 100 ミリ秒後ろへ";
+"Include / exclude the selected track from the export" = "選択トラックを書き出す / 書き出さない";
+"Fade in from the start of the track to the playhead" = "トラックの先頭から再生位置までフェードイン";
+"Fade out from the playhead to the end of the track" = "再生位置からトラックの末尾までフェードアウト";
+"Remove the fade-in" = "フェードインを解除";
+"Remove the fade-out" = "フェードアウトを解除";
+"View" = "表示";
+"Zoom in" = "拡大";
+"Zoom out" = "縮小";
+"Zoom to the selected track" = "選択トラックに合わせて拡大";
+"Zoom to fit" = "全体を表示";
+"Menu" = "メニュー";
+"Split at silences" = "無音区間で分割";
+"Undo" = "取り消す";
+"Redo" = "やり直す";
+"Show / hide the inspector" = "インスペクタを表示 / 隠す";
+"Keyboard shortcuts" = "キーボードショートカット";
+"Single-key shortcuts work anywhere in the window except while typing in a text field." = "1 文字のショートカットは、テキストフィールドへの入力中を除き、ウインドウのどこでも使えます。";
+"Close" = "閉じる";
+
+/* Split at silences sheet */
+"Threshold" = "しきい値";
+"%lld dB" = "%lld dB";
+"Minimum gap" = "最短の無音";
+"%.1f s" = "%.1f 秒";
+"Cancel" = "キャンセル";
+"Apply" = "適用";
+
+/* Export sheet */
+"Export Tracks" = "曲ごとに書き出し";
+"Format" = "形式";
+"Same as Source" = "元のファイルと同じ";
+"Show in Finder" = "Finder で表示";
+"Stop" = "中止";
+"Choose Folder and Export…" = "書き出し先を選んで書き出す…";
+"Replace" = "上書き";
+"Export stopped." = "中止しました";
+
+/* Errors */
+"Supported formats are FLAC, M4A and WAV: %@" = "対応形式は FLAC / M4A / WAV です: %@";
+"Could not open the file: %@" = "開けませんでした: %@";
+"Could not read the waveform: %@" = "波形を読み込めませんでした: %@";
+"Could not allocate an audio buffer." = "オーディオバッファを確保できませんでした。";
+"This audio format is not supported." = "このオーディオ形式には対応していません。";
+"AAC does not support %lld Hz. The sample rate must be 48 kHz or lower." = "AAC は %lld Hz に対応していません（48 kHz 以下のみ）。";
+"Could not create an export session." = "書き出しセッションを作成できませんでした。";
+"The export would overwrite the source file “%@”. Choose another folder." = "書き出し先「%@」が元のファイルと同じです。別のフォルダを選んでください。";
+"Could not write the tags: %@" = "タグを書き込めませんでした: %@";
+"Cannot create a temporary file" = "一時ファイルを作成できません";
+"The metadata is too large" = "メタデータが大きすぎます";
+"Not a FLAC file" = "FLAC ファイルではありません";
+"The FLAC metadata is corrupt" = "FLAC メタデータが壊れています";
+"Not a RIFF/WAVE file" = "RIFF/WAVE 形式ではありません";
+"The file is too large" = "ファイルが大きすぎます";
