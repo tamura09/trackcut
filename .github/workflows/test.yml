@@ -42,10 +42,14 @@ jobs:
           xcodebuild -version
           swift --version
 
+      # Covers TrackCutCore and the app target (editing, undo, waveform mouse
+      # handling, keyboard shortcuts). The app tests open windows that are never
+      # shown, which the runner's logged-in session allows.
       - name: Test
         run: swift test
 
       # Builds the release binary and the app bundle the README tells users to
-      # run. swift test alone does not build the app target.
+      # run. build-app.sh also fails when the binary records an SDK too old for
+      # the Liquid Glass design.
       - name: Build app bundle
         run: ./build-app.sh

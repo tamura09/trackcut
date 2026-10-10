@@ -8,6 +8,7 @@ let package = Package(
         .target(name: "TrackCutCore"),
         .executableTarget(name: "TrackCut", dependencies: ["TrackCutCore"]),
         .testTarget(name: "TrackCutCoreTests", dependencies: ["TrackCutCore"]),
+        .testTarget(name: "TrackCutTests", dependencies: ["TrackCut", "TrackCutCore"]),
     ],
     swiftLanguageModes: [.v5]
 )
