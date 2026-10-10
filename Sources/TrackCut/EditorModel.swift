@@ -24,8 +24,10 @@ final class EditorModel: ObservableObject {
     static let shared = EditorModel()
 
     let player = PlayerModel()
-    /// The window's undo manager, which the Edit menu and ⌘Z use. Set by the detail waveform view.
-    weak var undoManager: UndoManager?
+    /// The editor window. Set by the detail waveform view.
+    weak var window: NSWindow?
+    /// The window's undo manager, which the Edit menu and ⌘Z use
+    var undoManager: UndoManager? { window?.undoManager }
     private var loadTask: Task<Void, Never>?
     /// Identifies the latest open(). Results from earlier loads are dropped by comparing against it;
     /// the URL is not enough because the same file can be opened again while it is still loading.
@@ -41,7 +43,7 @@ final class EditorModel: ObservableObject {
         // A text field has finished editing. Delivered on the next pass so the binding has its final value.
         NotificationCenter.default.publisher(for: NSControl.textDidEndEditingNotification)
             .receive(on: DispatchQueue.main)
-            .sink { [weak self] _ in MainActor.assumeIsolated { self?.commitTextEdits() } }
+            .sink { [weak self] _ in MainActor.assumeIsolated { _ = self?.commitTextEdits() } }
             .store(in: &cancellables)
     }
 
@@ -139,15 +141,22 @@ final class EditorModel: ObservableObject {
 
     /// Runs `change` as one undoable step
     func performUndoable(_ actionName: String, _ change: () -> Void) {
+        let committedText = finishTextEditing()
         let before = snapshot
         change()
-        registerUndo(actionName, restoring: before)
+        registerUndo(actionName, restoring: before, separateFromText: committedText)
     }
 
     /// Registers an undo step that goes back to `before`, if anything changed since. Used directly for
-    /// edits made over several events, such as dragging a split point.
-    func registerUndo(_ actionName: String, restoring before: Snapshot) {
+    /// edits made over several events, such as dragging a split point. `separateFromText` keeps text edits
+    /// committed earlier in the same event out of this step: the undo manager groups everything
+    /// registered during one event into one step.
+    func registerUndo(_ actionName: String, restoring before: Snapshot, separateFromText: Bool = false) {
         guard before.tracks != tracks, let undoManager else { return }
+        if separateFromText, undoManager.groupsByEvent, undoManager.groupingLevel == 1 {
+            undoManager.endUndoGrouping()
+            undoManager.beginUndoGrouping()
+        }
         undoManager.registerUndo(withTarget: self) { model in
             model.restore(before, actionName: actionName)
         }
@@ -158,6 +167,7 @@ final class EditorModel: ObservableObject {
 
     /// Starts an edit made over several events (a drag, a slider). endContinuousEdit registers it as one step.
     func beginContinuousEdit() {
+        finishTextEditing()
         continuousEditStart = snapshot
     }
 
@@ -220,13 +230,32 @@ final class EditorModel: ObservableObject {
         Binding(get: { self.text(target) }, set: { self.setText($0, for: target) })
     }
 
-    /// Registers the finished text edits for undo, one step per field. Called when a text field ends editing.
-    func commitTextEdits() {
+    /// Registers the finished text edits for undo, one step per field. Called when a text field ends editing,
+    /// and before other edits. Returns whether anything was registered.
+    @discardableResult
+    func commitTextEdits() -> Bool {
         let origins = textEditOrigins
         textEditOrigins = [:]
+        var registered = false
         for (target, original) in origins where text(target) != original {
             registerTextUndo(target, restoring: original)
+            registered = true
         }
+        return registered
+    }
+
+    /// Ends editing in the text field being typed into, if any, and registers its edit for undo. Run before
+    /// other edits: they may remove the track the text belongs to, and while the field is still editing,
+    /// ⌘Z would undo its typing instead of the registered steps. Returns whether anything was registered.
+    @discardableResult
+    private func finishTextEditing() -> Bool {
+        // Only with typed text pending, so that a text field committing its own value (the fade length)
+        // is not asked to end editing from inside its commit
+        guard !textEditOrigins.isEmpty else { return false }
+        if let window, window.firstResponder is NSText {
+            window.makeFirstResponder(nil)
+        }
+        return commitTextEdits()
     }
 
     /// Undo restores only this one value, so it stays correct whatever was undone around it

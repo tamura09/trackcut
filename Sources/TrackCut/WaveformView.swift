@@ -60,7 +60,7 @@ final class WaveformNSView: NSView {
         attachToWindow()
     }
 
-    /// The detail view hands the window's undo manager to the editor and listens for the single-key
+    /// The detail view hands its window to the editor (for undo) and listens for the single-key
     /// shortcuts while it is in a window.
     private func attachToWindow() {
         guard mode == .detail else { return }
@@ -68,7 +68,7 @@ final class WaveformNSView: NSView {
             keyMonitor.uninstall()
             return
         }
-        editor.undoManager = window.undoManager
+        editor.window = window
         keyMonitor.install(window: window, editor: editor)
     }
 
