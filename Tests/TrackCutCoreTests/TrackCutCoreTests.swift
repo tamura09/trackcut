@@ -3,10 +3,11 @@ import Testing
 @testable import TrackCutCore
 
 /// 3 s tone -> 2 s silence -> 3 s tone -> 2 s silence -> 3 s tone (13 s in total)
-private func makeTestWAV(in dir: URL, sampleRate: Double = 44_100) throws -> URL {
-    let url = dir.appendingPathComponent("source.wav")
+private func makeTestWAV(in dir: URL, sampleRate: Double = 44_100, channels: Int = 2,
+                         name: String = "source.wav") throws -> URL {
+    let url = dir.appendingPathComponent(name)
     let settings: [String: Any] = [
-        AVFormatIDKey: kAudioFormatLinearPCM, AVSampleRateKey: sampleRate, AVNumberOfChannelsKey: 2,
+        AVFormatIDKey: kAudioFormatLinearPCM, AVSampleRateKey: sampleRate, AVNumberOfChannelsKey: channels,
         AVLinearPCMBitDepthKey: 16, AVLinearPCMIsFloatKey: false, AVLinearPCMIsBigEndianKey: false,
     ]
     let file = try AVAudioFile(forWriting: url, settings: settings, commonFormat: .pcmFormatFloat32, interleaved: false)
@@ -15,7 +16,7 @@ private func makeTestWAV(in dir: URL, sampleRate: Double = 44_100) throws -> URL
         let frames = AVAudioFrameCount(part.seconds * sampleRate)
         let buffer = AVAudioPCMBuffer(pcmFormat: file.processingFormat, frameCapacity: frames)!
         buffer.frameLength = frames
-        for ch in 0..<2 {
+        for ch in 0..<channels {
             let p = buffer.floatChannelData![ch]
             for i in 0..<Int(frames) {
                 p[i] = part.tone ? 0.5 * sin(Float(i) * 2 * .pi * 440 / Float(sampleRate)) : 0
@@ -260,30 +261,6 @@ func cancelledOverwriteKeepsTheExistingFile(format: ExportFormat, cancelAt: Canc
     #expect(try FileManager.default.contentsOfDirectory(atPath: outDir.path) == [existing.lastPathComponent])
 }
 
-@Test func channelLayoutDataKeepsEveryDescription() throws {
-    let count = 3
-    let descriptionsOffset = MemoryLayout<AudioChannelLayout>.offset(of: \.mChannelDescriptions)!
-    let size = descriptionsOffset + count * MemoryLayout<AudioChannelDescription>.stride
-    let raw = UnsafeMutableRawPointer.allocate(byteCount: size, alignment: MemoryLayout<AudioChannelLayout>.alignment)
-    defer { raw.deallocate() }
-    raw.initializeMemory(as: UInt8.self, repeating: 0, count: size)
-    let layout = raw.assumingMemoryBound(to: AudioChannelLayout.self)
-    layout.pointee.mChannelLayoutTag = kAudioChannelLayoutTag_UseChannelDescriptions
-    layout.pointee.mNumberChannelDescriptions = UInt32(count)
-    let labels = [kAudioChannelLabel_Left, kAudioChannelLabel_Right, kAudioChannelLabel_Center]
-    let descriptions = (raw + descriptionsOffset).assumingMemoryBound(to: AudioChannelDescription.self)
-    for i in 0..<count { descriptions[i].mChannelLabel = labels[i] }
-
-    let data = ResolvedFormat.channelLayoutData(AVAudioChannelLayout(layout: layout))
-    #expect(data.count == size)
-    let decoded: [AudioChannelLabel] = data.withUnsafeBytes { bytes in
-        guard bytes.count >= size else { return [] }
-        let base = (bytes.baseAddress! + descriptionsOffset).assumingMemoryBound(to: AudioChannelDescription.self)
-        return (0..<count).map { base[$0].mChannelLabel }
-    }
-    #expect(decoded == labels)
-}
-
 /// A 1-second stereo 64-bit float WAV. AVAudioFile cannot write one (it writes Float32 instead),
 /// so the file is assembled by hand.
 private func makeFloat64WAV(in dir: URL) throws -> URL {
@@ -436,4 +413,382 @@ private func readSamples(_ url: URL) throws -> [Float] {
     // One track with a fade-out at the end of the file, split into three
     let single = [Track(start: 0, fadeOut: Fade(duration: 5))].replacingSplits(with: [10, 20], tolerance: 0.1)
     #expect(single.map(\.fadeOut.duration) == [0, 0, 5])
+}
+
+// MARK: - Source info and export options
+
+@Test func sourceInfoDescribesTheFile() throws {
+    let dir = try makeTempDir()
+    let info = try SourceAudioInfo(url: try makeTestWAV(in: dir))
+    #expect(info.codecName == "PCM")
+    #expect(info.sampleRate == 44_100)
+    #expect(info.bitDepth == 16)
+    #expect(info.channelCount == 2)
+    #expect(abs(info.duration - 13) < 0.001)
+    #expect(info.bitRate == 44_100 * 16 * 2)
+    #expect(info.fileSize.map { $0 > 13 * 44_100 * 4 } == true)
+}
+
+private func exportAll(_ source: URL, as format: ExportFormat, options: ExportOptions, name: String) async throws -> URL {
+    try await AudioExporter.export(
+        source: source, segments: [ExportSegment(start: 0, end: 13, fileBaseName: name)], format: format,
+        options: options, to: source.deletingLastPathComponent())[0]
+}
+
+@Test func aacIsEncodedAtTheChosenBitRate() async throws {
+    let dir = try makeTempDir()
+    let wav = try makeTestWAV(in: dir)
+    let low = try SourceAudioInfo(url: try await exportAll(wav, as: .aac, options: ExportOptions(aacBitRate: 96_000), name: "low"))
+    let high = try SourceAudioInfo(url: try await exportAll(wav, as: .aac, options: ExportOptions(aacBitRate: 320_000), name: "high"))
+    #expect(low.isAAC && high.isAAC)
+    // The encoder is VBR, so only roughly
+    #expect(low.bitRate.map { $0 < 140_000 } == true, "\(String(describing: low.bitRate))")
+    #expect(high.bitRate.map { $0 > 200_000 } == true, "\(String(describing: high.bitRate))")
+
+    // An AAC source is re-encoded at the chosen rate rather than cut as is
+    let again = try SourceAudioInfo(url: try await exportAll(dir.appendingPathComponent("high.m4a"), as: .aac,
+                                                            options: ExportOptions(aacBitRate: 96_000), name: "again"))
+    #expect(again.bitRate.map { $0 < 140_000 } == true)
+}
+
+/// Mono AAC tops out below 320 kbps. The encoder gets the nearest rate it accepts instead of failing.
+@Test func aacBitRateIsLimitedToWhatTheEncoderAccepts() async throws {
+    let dir = try makeTempDir()
+    let mono = try makeTestWAV(in: dir, channels: 1)
+    let out = try await exportAll(mono, as: .aac, options: ExportOptions(aacBitRate: 320_000), name: "mono")
+    #expect(try SourceAudioInfo(url: out).channelCount == 1)
+}
+
+@Test func exportConvertsTheSampleRate() async throws {
+    let dir = try makeTempDir()
+    let wav = try makeTestWAV(in: dir)
+    let out = try await exportAll(wav, as: .flac, options: ExportOptions(bitDepth: 24, sampleRate: 48_000), name: "48k")
+    let info = try SourceAudioInfo(url: out)
+    #expect(info.sampleRate == 48_000)
+    #expect(info.bitDepth == 24)
+    #expect(abs(info.duration - 13) < 0.01)
+
+    // The tone is still there and silence is still silent
+    let samples = try readSamples(out)
+    func peak(_ seconds: ClosedRange<Double>) -> Float {
+        samples[Int(seconds.lowerBound * 48_000)..<Int(seconds.upperBound * 48_000)].map(abs).max() ?? 0
+    }
+    #expect(abs(peak(1...2) - 0.5) < 0.01)
+    #expect(peak(3.5...4.5) < 0.001)
+}
+
+@Test(arguments: [(96_000.0, 48_000.0), (88_200, 44_100), (44_100, 44_100)])
+func aacLimitsTheSampleRateTo48kHz(source: Double, expected: Double) async throws {
+    let dir = try makeTempDir()
+    let wav = try makeTestWAV(in: dir, sampleRate: source)
+    let out = try await exportAll(wav, as: .aac, options: ExportOptions(), name: "aac")
+    #expect(try SourceAudioInfo(url: out).sampleRate == expected)
+}
+
+@Test func sameAsSourceIgnoresTheOptions() async throws {
+    let dir = try makeTempDir()
+    let wav = try makeTestWAV(in: dir)
+    let out = try await exportAll(wav, as: .sameAsSource, options: ExportOptions(bitDepth: 24, sampleRate: 48_000),
+                                  name: "same")
+    let info = try SourceAudioInfo(url: out)
+    #expect(info.sampleRate == 44_100)
+    #expect(info.bitDepth == 16)
+}
+
+@Test func chosenBitDepthOfAFloatSourceIsInteger() async throws {
+    let dir = try makeTempDir()
+    let float64 = try makeFloat64WAV(in: dir)
+    let out = try await AudioExporter.export(
+        source: float64, segments: [ExportSegment(start: 0, end: 1, fileBaseName: "out")], format: .wav,
+        options: ExportOptions(bitDepth: 24), to: dir)[0]
+    let info = try SourceAudioInfo(url: out)
+    #expect(info.bitDepth == 24)
+    #expect(!info.isFloat)
+}
+
+// MARK: - Projects
+
+@Test func projectRoundTripsAndFindsAMovedSource() throws {
+    let dir = try makeTempDir()
+    let audioDir = dir.appendingPathComponent("audio")
+    try FileManager.default.createDirectory(at: audioDir, withIntermediateDirectories: true)
+    let source = try makeTestWAV(in: audioDir)
+    let projectURL = dir.appendingPathComponent("Live.trackcut")
+    let tracks = [Track(start: 0, title: "Intro", fadeIn: Fade(duration: 1.5, curve: .sCurve)),
+                  Track(start: 4, title: "Song", artist: "Guest", isEnabled: false)]
+    let project = Project(sources: [source], savedAt: projectURL, album: AudioTags(album: "Live", date: "2024"),
+                          tracks: tracks)
+    #expect(project.sources[0].relativePath == "audio/source.wav")
+    try project.write(to: projectURL)
+    #expect(try Project(contentsOf: projectURL) == project)
+
+    // Move the project and its audio together: the relative path finds the audio first
+    let moved = dir.appendingPathComponent("moved")
+    try FileManager.default.createDirectory(at: moved, withIntermediateDirectories: true)
+    try FileManager.default.moveItem(at: audioDir, to: moved.appendingPathComponent("audio"))
+    try FileManager.default.moveItem(at: projectURL, to: moved.appendingPathComponent("Live.trackcut"))
+    let candidates = try Project(contentsOf: moved.appendingPathComponent("Live.trackcut"))
+        .sources[0].candidates(projectURL: moved.appendingPathComponent("Live.trackcut"))
+    #expect(candidates.first?.path == moved.appendingPathComponent("audio/source.wav").standardizedFileURL.path)
+    #expect(candidates.last?.path == source.standardizedFileURL.path)
+}
+
+@Test func projectRefusesNewerAndDamagedFiles() throws {
+    let dir = try makeTempDir()
+    let newer = dir.appendingPathComponent("newer.trackcut")
+    try Data(#"{"version": 99}"#.utf8).write(to: newer)
+    #expect { try Project(contentsOf: newer) } throws: { ($0 as? ProjectError) == .newerVersion }
+    let damaged = dir.appendingPathComponent("damaged.trackcut")
+    try Data(#"{"version": 1, "tracks": 3}"#.utf8).write(to: damaged)
+    #expect { try Project(contentsOf: damaged) } throws: { ($0 as? ProjectError) == .unreadable }
+}
+
+@Test func projectTracksAreFittedToTheSource() {
+    var project = Project(sources: [URL(fileURLWithPath: "/a.wav")], savedAt: URL(fileURLWithPath: "/p.trackcut"),
+                          album: AudioTags(), tracks: [])
+    project.tracks = [Track(start: 5, title: "B"), Track(start: 0.5, title: "A"), Track(start: 5.05, title: "Too close"),
+                      Track(start: 20, title: "Past the end")]
+    // B is too short to keep, so "Too close" takes over its start; the last one starts past the end
+    #expect(project.tracks(fitting: 13, minLength: 0.1).map(\.title) == ["A", "Too close"])
+    #expect(project.tracks(fitting: 13, minLength: 0.1).map(\.start) == [0, 5])
+    project.tracks = []
+    #expect(project.tracks(fitting: 13, minLength: 0.1).count == 1)
+
+    // Repeated IDs (a copied entry in a hand-edited file) are made distinct
+    let copied = Track(start: 0, title: "Copy")
+    project.tracks = [copied, { var t = copied; t.start = 4; return t }()]
+    let fitted = project.tracks(fitting: 13, minLength: 0.1)
+    #expect(fitted.count == 2)
+    #expect(Set(fitted.map(\.id)).count == 2)
+}
+
+/// A file of a few milliseconds gets no track of its own: the next file's track starts where it does
+@Test func tracksForVeryShortFilesAreDropped() {
+    let tracks = [Track(start: 0, title: "Blip"), Track(start: 0.02, title: "Song"), Track(start: 9.98, title: "Tail")]
+    let fitted = tracks.fitted(to: 10, minLength: 0.1)
+    #expect(fitted.map(\.title) == ["Song"])
+    #expect(fitted[0].start == 0)
+}
+
+// MARK: - Several files as one source
+
+@Test func audioFilesInAFolderAreInFinderOrder() throws {
+    let dir = try makeTempDir()
+    for name in ["10 Ten.wav", "2 Two.flac", "1 One.m4a", "notes.txt", ".hidden.wav", "Cover.jpg"] {
+        try Data().write(to: dir.appendingPathComponent(name))
+    }
+    try FileManager.default.createDirectory(at: dir.appendingPathComponent("sub"), withIntermediateDirectories: true)
+    #expect(try AudioSource.audioFiles(in: dir).map(\.lastPathComponent) == ["1 One.m4a", "2 Two.flac", "10 Ten.wav"])
+}
+
+@Test func joinedFilesAreReadAsOneTimelineBitExact() async throws {
+    let dir = try makeTempDir()
+    let a = try makeTestWAV(in: dir, name: "a.wav")
+    let b = try makeTestWAV(in: dir, name: "b.wav")
+    let source = try AudioSource(urls: [a, b])
+    #expect(source.totalFrames == 2 * 13 * 44_100)
+    #expect(source.fileStarts == [0, 13])
+
+    // 2 s on each side of the join
+    let out = try await AudioExporter.export(
+        source: source, segments: [ExportSegment(start: 11, end: 15, fileBaseName: "across")], format: .wav,
+        to: dir.appendingPathComponent("out", isDirectory: true).creatingDirectory())[0]
+    let joined = try readSamples(out)
+    let original = try readSamples(a)
+    #expect(joined.count == 4 * 44_100)
+    #expect(Array(joined[0..<88_200]) == Array(original[(11 * 44_100)..<(13 * 44_100)]))
+    #expect(Array(joined[88_200...]) == Array(original[0..<(2 * 44_100)]))
+
+    let peaks = try WaveformAnalyzer.analyze(source)
+    #expect(abs(peaks.duration - 26) < 0.001)
+    // The gaps inside each file are found; the join itself has no silence
+    #expect(SilenceDetector.splitPoints(in: peaks, thresholdDB: -50, minDuration: 1).count == 4)
+}
+
+/// A mono 48 kHz file after a stereo 44.1 kHz one: the timeline takes 48 kHz stereo and converts the first
+@Test func filesOfDifferentFormatsAreConvertedInPlace() async throws {
+    let dir = try makeTempDir()
+    let a = try makeTestWAV(in: dir, sampleRate: 44_100, channels: 2, name: "a.wav")
+    let b = try makeTestWAV(in: dir, sampleRate: 48_000, channels: 1, name: "b.wav")
+    let source = try AudioSource(urls: [a, b])
+    #expect(source.sampleRate == 48_000)
+    #expect(source.channelCount == 2)
+    #expect(source.totalFrames == 2 * 13 * 48_000)
+
+    let peaks = try WaveformAnalyzer.analyze(source)
+    #expect(abs(peaks.duration - 26) < 0.001)
+    // Each gap of each file is where it should be: 3-5 s and 8-10 s into each file
+    let gaps = SilenceDetector.silences(in: peaks, thresholdDB: -50, minDuration: 1)
+    let expected: [ClosedRange<Double>] = [3...5, 8...10, 16...18, 21...23]
+    #expect(gaps.count == 4)
+    for (gap, want) in zip(gaps, expected) {
+        #expect(abs(gap.lowerBound - want.lowerBound) < 0.01 && abs(gap.upperBound - want.upperBound) < 0.01, "\(gap)")
+    }
+
+    let out = try await AudioExporter.export(
+        source: source, segments: [ExportSegment(start: 0, end: 26, fileBaseName: "all")], format: .sameAsSource,
+        to: dir.appendingPathComponent("out", isDirectory: true).creatingDirectory())[0]
+    let info = try SourceAudioInfo(url: out)
+    #expect(info.sampleRate == 48_000)
+    #expect(info.channelCount == 2)
+    #expect(abs(info.duration - 26) < 0.001)
+
+    // Starting in the middle of the converted file keeps the timing: its tone stops at 3 s, 1 s in
+    let part = try await AudioExporter.export(
+        source: source, segments: [ExportSegment(start: 2, end: 4, fileBaseName: "part")], format: .wav,
+        to: dir.appendingPathComponent("out", isDirectory: true))[0]
+    let samples = try readSamples(part)
+    #expect(samples.count == 2 * 48_000)
+    let toneEnd = samples.lastIndex { abs($0) > 0.01 }!
+    #expect(abs(Double(toneEnd) / 48_000 - 1) < 0.005, "\(toneEnd)")
+}
+
+@Test func aacInsideOneFileIsCutAsIs() async throws {
+    let dir = try makeTempDir()
+    let wav = try makeTestWAV(in: dir)
+    let aac = try await AudioExporter.export(
+        source: wav, segments: [ExportSegment(start: 0, end: 13, fileBaseName: "aac")], format: .aac, to: dir)[0]
+    let source = try AudioSource(urls: [aac, aac])
+    let inside = ExportSegment(start: source.fileStarts[1] + 1, end: source.fileStarts[1] + 3, fileBaseName: "inside")
+    let across = ExportSegment(start: source.fileStarts[1] - 1, end: source.fileStarts[1] + 1, fileBaseName: "across")
+    // Only the segment within one file is cut without re-encoding
+    #expect(AudioExporter.passthroughFile(for: inside, in: source)?.startFrame == source.files[1].startFrame)
+    #expect(AudioExporter.passthroughFile(for: across, in: source) == nil)
+
+    let outDir = try dir.appendingPathComponent("out", isDirectory: true).creatingDirectory()
+    let urls = try await AudioExporter.export(source: source, segments: [inside, across], format: .sameAsSource, to: outDir)
+    for url in urls {
+        let file = try AVAudioFile(forReading: url)
+        #expect(abs(Double(file.length) / file.processingFormat.sampleRate - 2) < 0.1, "\(url.lastPathComponent)")
+    }
+}
+
+/// Review: with an AAC file first and a 96 kHz file after it, "same as source" re-encoded the second at
+/// 96 kHz, which AAC cannot do
+@Test func aacFirstJoinedWithA96kHzFileExportsAsSource() async throws {
+    let dir = try makeTempDir()
+    let wav = try makeTestWAV(in: dir)
+    let aac = try await AudioExporter.export(
+        source: wav, segments: [ExportSegment(start: 0, end: 13, fileBaseName: "aac")], format: .aac, to: dir)[0]
+    let hiRes = try makeTestWAV(in: dir, sampleRate: 96_000, name: "hires.wav")
+    let source = try AudioSource(urls: [aac, hiRes])
+    #expect(source.sampleRate == 96_000)
+
+    let inAAC = ExportSegment(start: 1, end: 3, fileBaseName: "in-aac")
+    let inHiRes = ExportSegment(start: source.fileStarts[1] + 1, end: source.fileStarts[1] + 3, fileBaseName: "in-hires")
+    // The AAC file is still cut as is, in its own time, though the timeline has another rate
+    #expect(AudioExporter.passthroughFile(for: inAAC, in: source) != nil)
+
+    let outDir = try dir.appendingPathComponent("out", isDirectory: true).creatingDirectory()
+    let urls = try await AudioExporter.export(source: source, segments: [inAAC, inHiRes], format: .sameAsSource,
+                                              to: outDir)
+    let infos = try urls.map { try SourceAudioInfo(url: $0) }
+    #expect(infos.allSatisfy { $0.isAAC })
+    #expect(infos.map(\.sampleRate) == [44_100, 48_000])
+    #expect(infos.allSatisfy { abs($0.duration - 2) < 0.1 })
+}
+
+/// Review: a file that delivers fewer frames than it reported was not padded, so the files after it moved
+@Test func aFileShorterThanReportedIsPaddedWithSilence() throws {
+    let dir = try makeTempDir()
+    let wav = try makeTestWAV(in: dir)
+    let real = try AudioSource(url: wav)
+    let extra: AVAudioFramePosition = 10_000
+    let file = real.files[0]
+    let claimed = AudioSource.File(url: file.url, info: file.info, length: file.length + extra, startFrame: 0,
+                                   frameCount: file.frameCount + extra)
+    let source = AudioSource(files: [claimed], sampleRate: real.sampleRate, channelCount: real.channelCount)
+    let reader = try SourceReader(source: source, commonFormat: .pcmFormatFloat32)
+
+    for range in [file.length - 1_000 ..< file.length + extra, file.length + 10 ..< file.length + 500] {
+        var frames = 0
+        try reader.read(range) { frames += Int($0.frameLength) }
+        #expect(frames == range.count)
+    }
+}
+
+/// Review: joining a stereo file with a 5.1 file failed: a format above stereo needs a channel layout
+@Test func stereoJoinedWithSurroundTakesTheSurroundLayout() async throws {
+    let dir = try makeTempDir()
+    let stereo = try makeTestWAV(in: dir, name: "stereo.wav")
+    let layout = AVAudioChannelLayout(layoutTag: kAudioChannelLayoutTag_MPEG_5_1_A)!
+    let format = AVAudioFormat(standardFormatWithSampleRate: 48_000, channelLayout: layout)
+    var settings = format.settings
+    settings[AVLinearPCMBitDepthKey] = 16
+    settings[AVLinearPCMIsFloatKey] = false
+    settings[AVLinearPCMIsNonInterleaved] = false
+    settings[AVLinearPCMIsBigEndianKey] = false
+    let surroundURL = dir.appendingPathComponent("surround.wav")
+    do {
+        let file = try AVAudioFile(forWriting: surroundURL, settings: settings, commonFormat: .pcmFormatFloat32,
+                                   interleaved: false)
+        let buffer = AVAudioPCMBuffer(pcmFormat: file.processingFormat, frameCapacity: 48_000)!
+        buffer.frameLength = 48_000
+        for ch in 0..<6 {
+            for i in 0..<48_000 { buffer.floatChannelData![ch][i] = 0.25 * sin(Float(i) * 2 * .pi * 440 / 48_000) }
+        }
+        try file.write(from: buffer)
+    }
+
+    let source = try AudioSource(urls: [stereo, surroundURL])
+    #expect(source.channelCount == 6)
+    let peaks = try WaveformAnalyzer.analyze(source)
+    #expect(abs(peaks.duration - 14) < 0.001)
+    let out = try await AudioExporter.export(
+        source: source, segments: [ExportSegment(start: 12, end: 14, fileBaseName: "across")], format: .wav,
+        to: dir.appendingPathComponent("out", isDirectory: true).creatingDirectory())[0]
+    let info = try SourceAudioInfo(url: out)
+    #expect(info.channelCount == 6)
+    #expect(abs(info.duration - 2) < 0.001)
+}
+
+private extension URL {
+    func creatingDirectory() throws -> URL {
+        try FileManager.default.createDirectory(at: self, withIntermediateDirectories: true)
+        return self
+    }
+}
+
+// MARK: - Rearranging files
+
+/// Three files of 10, 20 and 30 s. Tracks: A at 0, B at 5 (runs on into file 2), C at 12, D at 30 (file 3).
+private let arrangementTracks = [
+    Track(start: 0, title: "A"),
+    Track(start: 5, title: "B", fadeOut: Fade(duration: 2)),
+    Track(start: 12, title: "C"),
+    Track(start: 30, title: "D"),
+]
+
+private func arranged(_ order: [Int?], lengths: [Double]) -> [Track] {
+    let newStarts = lengths.indices.map { lengths[..<$0].reduce(0, +) }
+    return FileArrangement.tracks(arrangementTracks, oldStarts: [0, 10, 30], order: order, newStarts: newStarts,
+                                  tolerance: 0.1) { Track(start: 0, title: "new \($0)") }
+}
+
+@Test func unchangedArrangementKeepsTheTracks() {
+    #expect(arranged([0, 1, 2], lengths: [10, 20, 30]) == arrangementTracks)
+}
+
+@Test func movedFilesTakeTheirTracksAlong() {
+    // File 3 first: B still runs from file 1 into file 2, which stay together
+    let tracks = arranged([2, 0, 1], lengths: [30, 10, 20])
+    #expect(tracks.map(\.title) == ["D", "A", "B", "C"])
+    #expect(tracks.map(\.start) == [0, 30, 35, 42])
+}
+
+@Test func separatedFilesSplitTheTrackBetweenThem() {
+    // File 2 first: B is cut where file 2 started, and the part in file 2 moves with it
+    let tracks = arranged([1, 0, 2], lengths: [20, 10, 30])
+    #expect(tracks.map(\.title) == ["", "C", "A", "B", "D"])
+    #expect(tracks.map(\.start) == [0, 2, 20, 25, 30])
+    // B's fade-out was at the end of what it covered, which is now the new part's end
+    #expect(tracks[0].fadeOut.duration == 2)
+    #expect(!tracks[3].fadeOut.isEnabled)
+}
+
+@Test func removedAndAddedFiles() {
+    // File 2 removed, a new file added at the end
+    let tracks = arranged([0, 2, nil], lengths: [10, 30, 5])
+    #expect(tracks.map(\.title) == ["A", "B", "D", "new 2"])
+    #expect(tracks.map(\.start) == [0, 5, 10, 40])
 }

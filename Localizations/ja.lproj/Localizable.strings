@@ -54,6 +54,41 @@
 "Album Artist" = "アルバムアーティスト";
 "Year" = "年";
 "Genre" = "ジャンル";
+"Track (Not Exported)" = "トラック（書き出さない）";
+
+/* Source file (inspector) */
+"Source File" = "元のファイル";
+"Sample Rate" = "サンプルレート";
+"Bit Depth" = "ビット深度";
+"Channels" = "チャンネル";
+"Bit Rate" = "ビットレート";
+"Duration" = "長さ";
+"File Size" = "ファイルサイズ";
+"Mono" = "モノラル";
+"Stereo" = "ステレオ";
+"%lld channels" = "%lld チャンネル";
+"%lld-bit" = "%lld ビット";
+"%lld-bit float" = "%lld ビット浮動小数点";
+"Source Files" = "元のファイル";
+"Joined as %@" = "連結後: %@";
+"Files with a different sample rate or channel count are converted to match." = "サンプルレートやチャンネル数が異なるファイルは揃えて変換されます。";
+
+/* Join files sheet */
+"Choose an audio file, a project, or several audio files or a folder to join" = "オーディオファイルかプロジェクトを選択します。複数のファイルやフォルダを選ぶと連結して開きます";
+"Join Files" = "ファイルを連結";
+"The files are played one after another as one recording, with a split point where each file starts. Drag them to change the order." = "ファイルをこの順に 1 本につなげて開き、各ファイルの先頭に分割点を置きます。ドラッグで順番を変えられます。";
+"Cannot be read" = "読み込めません";
+"Move up (⌥⌘↑)" = "上へ (⌥⌘↑)";
+"Move down (⌥⌘↓)" = "下へ (⌥⌘↓)";
+"Leave out (⌫)" = "除外 (⌫)";
+"Join and Open" = "連結して開く";
+"Arrange Files" = "ファイルを整理";
+"Tracks move with the file they start in. Where two files are no longer next to each other, a track running from one into the other is split. Added files get a track each." = "トラックは開始位置のファイルと一緒に移動します。隣り合わなくなったファイルにまたがるトラックは境目で分割されます。追加したファイルはそれぞれ 1 トラックになります。";
+"New" = "追加";
+"Add files or folders after the selected file" = "選択中のファイルの後にファイルやフォルダを追加";
+"Choose audio files or folders to add after the current ones" = "末尾に追加するオーディオファイルかフォルダを選択してください";
+"Analyzing Added Files…" = "追加したファイルを解析中…";
+"The files changed in the meantime. Arrange them again." = "その間にファイル構成が変わりました。もう一度整理してください。";
 
 /* Fade curves */
 "Linear" = "リニア";
@@ -70,6 +105,10 @@
 
 /* Menu bar */
 "Check for Updates…" = "アップデートを確認…";
+"Add Files…" = "ファイルを追加…";
+"Arrange Files…" = "ファイルを整理…";
+"Save Project" = "プロジェクトを保存";
+"Save Project As…" = "プロジェクトを別名で保存…";
 "Export…" = "書き出し…";
 "Track" = "トラック";
 "Split at Playhead" = "再生位置で分割";
@@ -143,6 +182,9 @@
 "Zoom to fit" = "全体を表示";
 "Menu" = "メニュー";
 "Split at silences" = "無音区間で分割";
+"Add files" = "ファイルを追加";
+"Save project" = "プロジェクトを保存";
+"Save project as" = "プロジェクトを別名で保存";
 "Undo" = "取り消す";
 "Redo" = "やり直す";
 "Show / hide the inspector" = "インスペクタを表示 / 隠す";
@@ -162,19 +204,37 @@
 "Export Tracks" = "曲ごとに書き出し";
 "Format" = "形式";
 "Same as Source" = "元のファイルと同じ";
+"Same as Source (%@)" = "元のファイルと同じ（%@）";
 "Show in Finder" = "Finder で表示";
 "Stop" = "中止";
 "Choose Folder and Export…" = "書き出し先を選んで書き出す…";
 "Replace" = "上書き";
 "Export stopped." = "中止しました";
 
+/* Projects */
+"Do you want to save the changes to “%@”?" = "「%@」への変更を保存しますか？";
+"Do you want to save this work as a project?" = "編集内容をプロジェクトとして保存しますか？";
+"Your changes will be lost if you don’t save them." = "保存しないと変更内容は失われます。";
+"Save…" = "保存…";
+"Don’t Save" = "保存しない";
+"The audio file “%@” of this project was not found." = "このプロジェクトのオーディオファイル「%@」が見つかりません。";
+"Locate…" = "場所を指定…";
+"Choose the audio file “%@”" = "オーディオファイル「%@」を選択してください";
+
 /* Errors */
 "Supported formats are FLAC, M4A and WAV: %@" = "対応形式は FLAC / M4A / WAV です: %@";
 "Could not open the file: %@" = "開けませんでした: %@";
+"Could not open the folder: %@" = "フォルダを開けませんでした: %@";
+"Could not play the file: %@" = "再生できません: %@";
+"Supported formats are FLAC, M4A and WAV" = "対応形式は FLAC / M4A / WAV です";
+"“%@” has no FLAC, M4A or WAV files." = "「%@」に FLAC / M4A / WAV ファイルがありません。";
 "Could not read the waveform: %@" = "波形を読み込めませんでした: %@";
+"Could not open the project: %@" = "プロジェクトを開けませんでした: %@";
+"Could not save the project: %@" = "プロジェクトを保存できませんでした: %@";
+"The project file is damaged or not a TrackCut project." = "プロジェクトファイルが壊れているか、TrackCut のプロジェクトではありません。";
+"The project was saved by a newer version of TrackCut. Update TrackCut to open it." = "このプロジェクトは新しいバージョンの TrackCut で保存されています。TrackCut をアップデートしてから開いてください。";
 "Could not allocate an audio buffer." = "オーディオバッファを確保できませんでした。";
 "This audio format is not supported." = "このオーディオ形式には対応していません。";
-"AAC does not support %lld Hz. The sample rate must be 48 kHz or lower." = "AAC は %lld Hz に対応していません（48 kHz 以下のみ）。";
 "Could not create an export session." = "書き出しセッションを作成できませんでした。";
 "The export would overwrite the source file “%@”. Choose another folder." = "書き出し先「%@」が元のファイルと同じです。別のフォルダを選んでください。";
 "Could not write the tags: %@" = "タグを書き込めませんでした: %@";

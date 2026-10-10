@@ -1,7 +1,7 @@
 import Foundation
 
 /// One track. It ends where the next track starts (the last track ends at the end of the file).
-public struct Track: Identifiable, Hashable, Sendable {
+public struct Track: Identifiable, Hashable, Sendable, Codable {
     public let id: UUID
     public var start: Double
     public var title: String
@@ -46,6 +46,34 @@ extension Track {
 }
 
 extension Array where Element == Track {
+    /// The tracks made to fit a source of `duration` seconds: in order, the first starting at 0, each at
+    /// least `minLength` long, and with distinct IDs. A track too short to keep (e.g. one for a file of a
+    /// few milliseconds) is dropped and the track after it takes over its start; one too close to the end
+    /// is dropped and the track before it runs to the end.
+    public func fitted(to duration: Double, minLength: Double) -> [Track] {
+        var result: [Track] = []
+        var ids = Set<Track.ID>()
+        for var track in sorted(by: { $0.start < $1.start }) {
+            if !ids.insert(track.id).inserted {
+                track = Track(start: track.start, title: track.title, artist: track.artist, isEnabled: track.isEnabled,
+                              fadeIn: track.fadeIn, fadeOut: track.fadeOut)
+                ids.insert(track.id)
+            }
+            if let last = result.last, track.start - last.start < minLength {
+                track.start = last.start
+                result.removeLast()
+            }
+            result.append(track)
+        }
+        while result.count > 1, result[result.count - 1].start > duration - minLength {
+            let last = result.removeLast()
+            result[result.count - 1].fadeOut = last.fadeOut
+        }
+        guard !result.isEmpty else { return [Track(start: 0)] }
+        result[0].start = 0
+        return result
+    }
+
     /// The tracks split at `times` instead. Titles, artists, the export selection and IDs are carried over by
     /// position in the list. Fades stay where they are in the file: the fade-in at the start and the
     /// fade-out at the end of the file, and the fades on both sides of a split point that is kept (one

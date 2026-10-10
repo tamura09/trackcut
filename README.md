@@ -9,24 +9,27 @@ The user interface is in English and Japanese and follows the system language. T
 ## Features
 
 - Open FLAC / M4A (AAC, ALAC) / WAV files from the Open dialog (⌘O), by dropping them on the window, or with "Open With" in Finder
+- Join several files into one recording: choose several files or a folder, and add, reorder or remove files later (see [Joining files](#joining-files))
+- See the source file's format in the inspector: codec, sample rate, bit depth, channels, bit rate, length and file size
+- Save the work as a project (⌘S) and pick it up again later (see [Projects](#projects))
 - Two waveform views: an overview of the whole file and a zoomable detail view with a time ruler
 - Place split points by double-clicking the waveform, pressing `M` at the playhead, or from the context menu; drag them to adjust
 - Detect split points automatically from silent gaps, with an adjustable threshold (dB) and minimum gap length
 - Fade each track in at its start and out at its end, with a choice of curve (linear, equal power, S-curve, exponential). The waveform shows the result as it will be exported
 - Name each track, choose which tracks to export, and set an artist per track
 - Undo and redo every edit (⌘Z / ⇧⌘Z). Typing into a text field becomes one step when the field finishes editing
-- Export every track to its own file named `01 Title.ext`
+- Export every track to its own file named `01 Title.ext`. Tracks left out of the export leave no gap in the numbers: with track 2 unchecked, track 3 is exported as `02`. The track list shows the number each track is exported under
 - On macOS 26 and later the window uses Liquid Glass: glass toolbar groups, floating playback controls over the waveform and a glass inspector
 
 ### Export formats
 
-- **Same as source** (default)
+- **Same as source** (default): the source's format, bit depth and sample rate
   - WAV, FLAC and ALAC keep the source bit depth
-  - AAC is cut without re-encoding, except for tracks with a fade, which are re-encoded at 256 kbps
-- **WAV**
-- **FLAC**
-- **Apple Lossless (m4a)**
-- **AAC 256 kbps (m4a)**: the source must be 48 kHz or lower. When the source is already AAC, it is cut without re-encoding (again, except for tracks with a fade)
+  - AAC is cut without re-encoding, except for tracks with a fade, which are re-encoded at about the source's bit rate
+- **WAV**, **FLAC**, **Apple Lossless (m4a)**: bit depth (same as source, 16 or 24 bit) and sample rate (same as source, 44.1 to 192 kHz)
+- **AAC (m4a)**: bit rate (96 to 320 kbps, 256 kbps by default) and sample rate (same as source, 44.1 or 48 kHz). AAC goes up to 48 kHz, so a source above that is converted to 44.1 kHz if it is a multiple of it (88.2, 176.4 kHz) and to 48 kHz otherwise. An AAC source is re-encoded at the chosen bit rate; use "Same as source" to cut it without re-encoding
+
+A different sample rate is converted with Core Audio's highest-quality sample rate converter. The choices are kept for the next export.
 
 ### Tags
 
@@ -35,6 +38,33 @@ Exported files get the title, track number and total, artist, album, album artis
 - **FLAC**: Vorbis comment
 - **M4A**: iTunes metadata
 - **WAV**: LIST/INFO chunk. INFO has no field for the album artist or the track total, so those two are not written
+
+### Joining files
+
+Choosing several audio files at once, or a folder, in the Open dialog (or dropping them on the window or the Dock icon) joins them into one recording. A folder contributes the FLAC, M4A and WAV files directly inside it, not those in subfolders. Before they are joined, the files are listed in the order Finder shows them, so you can drag them into another order or leave some out.
+
+The joined recording starts with a split point where each file starts, one track per file, named after the file's title tag (or its file name without a leading track number). Album fields that all files agree on are filled in, and each track gets its file's artist where they differ. From there it is edited like any other recording: move, add or remove split points to cut a track across two files, or merge files into one track.
+
+Files can be added, reordered and removed after the recording is open. File > Add Files… (⌥⌘O) adds files or folders at the end; File > Arrange Files… (also in the inspector) lists the files to drag into another order, add to with + (after the selected file) or by dragging files in from Finder, and leave out with −. Tracks move with the file they start in, so each track keeps its audio. Where two files are no longer next to each other, a track running from one into the other is split where the second file starts; the tracks of a removed file are removed, and each added file gets a track of its own. Each change is one step that ⌘Z undoes. Waveforms are kept per file, so only added files are analyzed.
+
+Files may have different formats. The recording takes the highest sample rate and channel count among them, and files that differ are converted as they are read (a mono file plays on both channels). Files of the same format are read sample for sample. With "Same as source", the export uses the first file's format; an AAC track that lies within one AAC file is still cut without re-encoding.
+
+### Projects
+
+File > Save Project (⌘S) saves the split points, titles, artists, export selection, fades and album tags to a `.trackcut` file, and Open (⌘O) or a double-click in Finder opens it again. A project refers to the audio files rather than containing them. It records both each file's path and its path relative to the project, so they can be moved together; if an audio file cannot be found, TrackCut asks where it is.
+
+Opening another file or quitting with unsaved changes asks whether to save them first.
+
+The file is JSON:
+
+```json
+{
+  "album" : { "album" : "Live at the Hall", "artist" : "Band", ... },
+  "sources" : [ { "path" : "/Users/me/Music/audio/live.flac", "relativePath" : "audio/live.flac" } ],
+  "tracks" : [ { "start" : 0, "title" : "Intro", "isEnabled" : true, "fadeIn" : { "duration" : 1.5, "curve" : "sCurve" }, ... } ],
+  "version" : 1
+}
+```
 
 ## Install
 

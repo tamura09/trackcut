@@ -97,6 +97,43 @@ cat > "$APP/Contents/Info.plist" <<PLIST
                 <string>com.microsoft.waveform-audio</string>
             </array>
         </dict>
+        <!-- A folder dropped on the Dock icon: its audio files are joined -->
+        <dict>
+            <key>CFBundleTypeName</key><string>Folder</string>
+            <key>CFBundleTypeRole</key><string>Viewer</string>
+            <key>LSHandlerRank</key><string>None</string>
+            <key>LSItemContentTypes</key>
+            <array>
+                <string>public.folder</string>
+            </array>
+        </dict>
+        <dict>
+            <key>CFBundleTypeName</key><string>TrackCut Project</string>
+            <key>CFBundleTypeRole</key><string>Editor</string>
+            <key>LSHandlerRank</key><string>Owner</string>
+            <key>LSItemContentTypes</key>
+            <array>
+                <string>com.9tmr.trackcut.project</string>
+            </array>
+        </dict>
+    </array>
+    <key>UTExportedTypeDeclarations</key>
+    <array>
+        <dict>
+            <key>UTTypeIdentifier</key><string>com.9tmr.trackcut.project</string>
+            <key>UTTypeDescription</key><string>TrackCut Project</string>
+            <key>UTTypeConformsTo</key>
+            <array>
+                <string>public.json</string>
+            </array>
+            <key>UTTypeTagSpecification</key>
+            <dict>
+                <key>public.filename-extension</key>
+                <array>
+                    <string>trackcut</string>
+                </array>
+            </dict>
+        </dict>
     </array>
 </dict>
 </plist>
