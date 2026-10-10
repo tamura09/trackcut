@@ -356,6 +356,7 @@ extension AppTests {
             #expect(titles(["01 - Song.flac", "1-02 Song.flac", "03. Song.flac", "04_Song.flac", "05-Song.flac"])
                     == Array(repeating: "Song", count: 5))
             #expect(titles(["1999.flac", "Song.flac"]) == ["1999", "Song"])
+            #expect(titles(["1.02 Song.flac", "2. Ballad.flac"]) == ["Song", "Ballad"])
             // PR #9 review: a number and a space may be part of the title
             #expect(titles(["99 Luftballons.flac"]) == ["99 Luftballons"])
             #expect(titles(["7 Rings.wav", "2001 A Space Odyssey.flac"]) == ["7 Rings", "2001 A Space Odyssey"])

@@ -795,11 +795,13 @@ private func arranged(_ order: [Int?], lengths: [Double]) -> [Track] {
 
 /// PR #9 review: the part of an excluded track split off at a file boundary was exported
 @Test func splitPartsKeepTheExportSelection() {
-    let tracks = [Track(start: 0, title: "A"), Track(start: 5, title: "Excluded", isEnabled: false)]
+    let tracks = [Track(start: 0, title: "A"), Track(start: 5, title: "Excluded", artist: "Guest", isEnabled: false)]
     let result = FileArrangement.tracks(tracks, oldStarts: [0, 10], order: [1, 0], newStarts: [0, 20],
                                         tolerance: 0.1) { _ in Track(start: 0) }
     #expect(result.map(\.start) == [0, 20, 25])
     #expect(result.map(\.isEnabled) == [false, true, false])
+    // and the artist, which would otherwise fall back to the album's
+    #expect(result[0].artist == "Guest")
 }
 
 /// PR #9 review: starts far below zero survived fitting and crashed the time display
@@ -823,4 +825,44 @@ private func arranged(_ order: [Int?], lengths: [Double]) -> [Track] {
         format: .sameAsSource, to: dir.appendingPathComponent("out", isDirectory: true).creatingDirectory())[0]
     let bitRate = try #require(try SourceAudioInfo(url: out).bitRate)
     #expect(bitRate < 140_000, "\(bitRate)")
+}
+
+/// PR #9 review: a float WAV joined with an integer one was exported as integer PCM
+@Test func joinedSourceStaysFloatingPointWhenAFileIs() throws {
+    let dir = try makeTempDir()
+    let float64 = try makeFloat64WAV(in: dir)
+    let int16 = try makeTestWAV(in: dir)
+    #expect(try AudioSource(urls: [float64, int16]).info.isFloat)
+    #expect(try AudioSource(urls: [int16, float64]).info.isFloat)
+    #expect(try !AudioSource(urls: [int16, int16]).info.isFloat)
+}
+
+/// PR #9 review: once one file needed converting, every file was read as Float32, rounding 32-bit samples
+@Test func filesReadAsTheyAreKeepEveryBitNextToConvertedOnes() async throws {
+    let dir = try makeTempDir()
+    let url = dir.appendingPathComponent("int32.wav")
+    let samples: [Int32] = [0x4000_0001, -0x4000_0001, 0x7FFF_FFFF, 1, -1, 0x1234_5679]
+    do {
+        let settings: [String: Any] = [
+            AVFormatIDKey: kAudioFormatLinearPCM, AVSampleRateKey: 48_000.0, AVNumberOfChannelsKey: 2,
+            AVLinearPCMBitDepthKey: 32, AVLinearPCMIsFloatKey: false, AVLinearPCMIsBigEndianKey: false,
+        ]
+        let file = try AVAudioFile(forWriting: url, settings: settings, commonFormat: .pcmFormatInt32, interleaved: false)
+        let buffer = AVAudioPCMBuffer(pcmFormat: file.processingFormat, frameCapacity: 48_000)!
+        buffer.frameLength = 48_000
+        for ch in 0..<2 { for i in 0..<48_000 { buffer.int32ChannelData![ch][i] = samples[i % samples.count] } }
+        try file.write(from: buffer)
+    }
+    // The 44.1 kHz file is converted; the 48 kHz one is not
+    let source = try AudioSource(urls: [url, try makeTestWAV(in: dir)])
+    let reader = try SourceReader(source: source, commonFormat: .pcmFormatInt32)
+    var read: [Int32] = []
+    try reader.read(0..<48_000) { buffer in
+        read += (0..<Int(buffer.frameLength)).map { buffer.int32ChannelData![0][$0] }
+    }
+    #expect(read == (0..<48_000).map { samples[$0 % samples.count] })
+    // and the converted file still comes through
+    var converted = 0
+    try reader.read(48_000..<96_000) { converted += Int($0.frameLength) }
+    #expect(converted == 48_000)
 }

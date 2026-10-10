@@ -31,8 +31,8 @@ public enum FileArrangement {
                   i > 0
             else { continue }
             // As when splitting by hand: the fade-out stays at the end of the range, in the new part
-            // It is still part of the same track, so it keeps whether that is exported
-            var part = Track(start: boundary, isEnabled: tracks[i - 1].isEnabled)
+            // It is still part of the same track, so it keeps that track's artist and whether it is exported
+            var part = Track(start: boundary, artist: tracks[i - 1].artist, isEnabled: tracks[i - 1].isEnabled)
             part.fadeOut = tracks[i - 1].fadeOut
             tracks[i - 1].fadeOut = Fade(curve: part.fadeOut.curve)
             tracks.insert(part, at: i)

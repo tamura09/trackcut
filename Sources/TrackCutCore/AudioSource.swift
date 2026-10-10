@@ -71,7 +71,8 @@ public struct AudioSource: Sendable, Equatable {
     }
 
     /// The format a "same as source" export follows: the first file's codec, with the highest bit depth
-    /// of the lossless files and the timeline's sample rate and channel count
+    /// of the lossless files (floating point if any of them is) and the timeline's sample rate and channel
+    /// count
     public var info: SourceAudioInfo {
         let first = files[0].info
         guard files.count > 1 else { return first }
@@ -80,7 +81,7 @@ public struct AudioSource: Sendable, Equatable {
         // The highest bit rate of the AAC files: what re-encoded AAC is written at by default
         let aacBitRate = files.filter(\.info.isAAC).compactMap(\.info.bitRate).max()
         return SourceAudioInfo(formatID: first.formatID, bitDepth: bitDepth,
-                               isFloat: first.isFloat && lossless.allSatisfy(\.info.isFloat),
+                               isFloat: lossless.contains(where: \.info.isFloat),
                                sampleRate: sampleRate, channelCount: channelCount, duration: duration, bitRate: aacBitRate,
                                fileSize: files.compactMap(\.info.fileSize).reduce(0, +))
     }
@@ -100,11 +101,11 @@ final class SourceReader {
     /// Format of the buffers handed out: non-interleaved, at the timeline's rate and channel count
     let processingFormat: AVAudioFormat
 
-    /// `commonFormat` is the sample format to read files in when no conversion is needed. Converted
-    /// files are always read as Float32.
+    /// `commonFormat` is the sample format of the buffers. Files that need no conversion are read in it
+    /// directly, so they keep every bit; converted files are read as Float32 and converted to it.
     init(source: AudioSource, commonFormat: AVAudioCommonFormat) throws {
         self.source = source
-        let common = source.needsConversion ? .pcmFormatFloat32 : commonFormat
+        let common = commonFormat
         // The first file's layout, when it has the timeline's channel count (layouts matter above stereo)
         let firstFormat = try AVAudioFile(forReading: source.files[0].url, commonFormat: common, interleaved: false)
             .processingFormat

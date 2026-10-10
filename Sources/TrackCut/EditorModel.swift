@@ -445,12 +445,13 @@ final class EditorModel: ObservableObject {
     }
 
     /// The names of files without their extension and leading track number: "01 Song.flac", "1-02 Song.flac",
+    /// "1.02 Song.flac",
     /// "2. Song.flac" and "3 - Song.flac" all become "Song". A number followed by just a space may be part
     /// of the title ("99 Luftballons", "7 Rings"), so it is taken for a track number only when every file
     /// starts with one and they count up by one, as in a folder of album tracks.
     static func titles(fromFileNames urls: [URL]) -> [String] {
         struct Parsed { let number: Int; let title: String; let isMarked: Bool }
-        let pattern = #/^(\d+)(?:-(\d+))?(\.\s*|\s*-\s*|_+\s*|\s+)(.+)$/#
+        let pattern = #/^(\d+)(?:[-.](\d+))?(\.\s*|\s*-\s*|_+\s*|\s+)(.+)$/#
         let names = urls.map { $0.deletingPathExtension().lastPathComponent }
         let parsed = names.map { name -> Parsed? in
             guard let match = name.wholeMatch(of: pattern), let number = Int(match.2 ?? match.1) else { return nil }
