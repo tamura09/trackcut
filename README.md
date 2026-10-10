@@ -12,7 +12,7 @@ The user interface is in Japanese.
 - Detect split points automatically from silent gaps, with an adjustable threshold (dB) and minimum gap length
 - Fade each track in at its start and out at its end, with a choice of curve (linear, equal power, S-curve, exponential). The waveform shows the result as it will be exported
 - Name each track, choose which tracks to export, and set an artist per track
-- Undo and redo every edit (⌘Z / ⇧⌘Z)
+- Undo and redo every edit (⌘Z / ⇧⌘Z). Typing into a text field becomes one step when the field finishes editing
 - Export every track to its own file named `01 Title.ext`
 - On macOS 26 and later the window uses Liquid Glass: glass toolbar groups, floating playback controls over the waveform and a glass inspector
 

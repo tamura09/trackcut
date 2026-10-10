@@ -16,7 +16,7 @@ struct InspectorView: View {
                         .frame(maxWidth: .infinity)
                 }
             }
-            AlbumSection(tags: $editor.albumTags)
+            AlbumSection(editor: editor)
         }
         .formStyle(.grouped)
     }
@@ -25,8 +25,8 @@ struct InspectorView: View {
         let id = editor.tracks[i].id
         let start = editor.tracks[i].start
         return Section("トラック \(i + 1)") {
-            TextField("タイトル", text: trackBinding(id, \.title), prompt: Text("Track \(i + 1)"))
-            TextField("アーティスト", text: trackBinding(id, \.artist),
+            TextField("タイトル", text: editor.textBinding(.track(id, \.title)), prompt: Text("Track \(i + 1)"))
+            TextField("アーティスト", text: editor.textBinding(.track(id, \.artist)),
                       prompt: Text(editor.albumTags.artist.isEmpty ? "アルバムと同じ" : editor.albumTags.artist))
             Toggle("書き出す", isOn: Binding(get: { editor.index(of: id).map { editor.tracks[$0].isEnabled } ?? false },
                                           set: { editor.setEnabled($0, for: id) }))
@@ -35,11 +35,6 @@ struct InspectorView: View {
             LabeledContent("長さ", value: TimeFormat.string(editor.end(ofTrackAt: i) - start))
                 .monospacedDigit()
         }
-    }
-
-    private func trackBinding(_ id: Track.ID, _ keyPath: WritableKeyPath<Track, String>) -> Binding<String> {
-        Binding(get: { editor.index(of: id).map { editor.tracks[$0][keyPath: keyPath] } ?? "" },
-                set: { value in if let i = editor.index(of: id) { editor.tracks[i][keyPath: keyPath] = value } })
     }
 }
 
@@ -104,15 +99,15 @@ private struct FadeSection: View {
 
 /// Tags shared by the whole album
 private struct AlbumSection: View {
-    @Binding var tags: AudioTags
+    @ObservedObject var editor: EditorModel
 
     var body: some View {
         Section("アルバム") {
-            TextField("アルバム", text: $tags.album)
-            TextField("アーティスト", text: $tags.artist)
-            TextField("アルバムアーティスト", text: $tags.albumArtist)
-            TextField("年", text: $tags.date)
-            TextField("ジャンル", text: $tags.genre)
+            TextField("アルバム", text: editor.textBinding(.album(\.album)))
+            TextField("アーティスト", text: editor.textBinding(.album(\.artist)))
+            TextField("アルバムアーティスト", text: editor.textBinding(.album(\.albumArtist)))
+            TextField("年", text: editor.textBinding(.album(\.date)))
+            TextField("ジャンル", text: editor.textBinding(.album(\.genre)))
         }
     }
 }

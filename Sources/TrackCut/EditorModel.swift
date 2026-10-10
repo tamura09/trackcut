@@ -1,5 +1,6 @@
 import AppKit
 import Combine
+import SwiftUI
 import TrackCutCore
 import UniformTypeIdentifiers
 
@@ -37,6 +38,11 @@ final class EditorModel: ObservableObject {
         player.$currentTime
             .sink { [weak self] t in MainActor.assumeIsolated { self?.followPlayhead(t) } }
             .store(in: &cancellables)
+        // A text field has finished editing. Delivered on the next pass so the binding has its final value.
+        NotificationCenter.default.publisher(for: NSControl.textDidEndEditingNotification)
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] _ in MainActor.assumeIsolated { self?.commitTextEdits() } }
+            .store(in: &cancellables)
     }
 
     // MARK: - File
@@ -65,6 +71,7 @@ final class EditorModel: ObservableObject {
         // leave the window stuck on the progress view when the new file fails to open.
         loadTask?.cancel()
         undoManager?.removeAllActions()
+        textEditOrigins = [:]
         let id = UUID()
         loadID = id
         sourceURL = url
@@ -161,8 +168,8 @@ final class EditorModel: ObservableObject {
 
     private func restore(_ target: Snapshot, actionName: String) {
         let current = snapshot
-        // Titles and artists are typed into text fields, which keep their own undo while editing, so an
-        // undo of a split keeps the names typed since then.
+        // Titles and artists have undo steps of their own (see setText), so an undo of a split leaves them
+        // as they are. The snapshot can hold names typed after it was taken but committed only later.
         let names = Dictionary(uniqueKeysWithValues: current.tracks.map { ($0.id, ($0.title, $0.artist)) })
         tracks = target.tracks.map { track in
             var track = track
@@ -174,6 +181,72 @@ final class EditorModel: ObservableObject {
         }
         selectedTrackID = target.selectedTrackID
         registerUndo(actionName, restoring: current)
+    }
+
+    // MARK: - Text
+
+    /// A text field's value in the model
+    enum TextTarget: Hashable {
+        case track(Track.ID, WritableKeyPath<Track, String>)
+        case album(WritableKeyPath<AudioTags, String>)
+
+        var actionName: String {
+            switch self {
+            case .track(_, \Track.title): "タイトルの変更"
+            case .track: "アーティストの変更"
+            case .album: "アルバム情報の変更"
+            }
+        }
+    }
+
+    /// Values from before the text edits in progress. Each becomes one undo step when its field ends
+    /// editing: the field editor's own undo is gone by then.
+    private var textEditOrigins: [TextTarget: String] = [:]
+
+    func text(_ target: TextTarget) -> String {
+        switch target {
+        case .track(let id, let keyPath): index(of: id).map { tracks[$0][keyPath: keyPath] } ?? ""
+        case .album(let keyPath): albumTags[keyPath: keyPath]
+        }
+    }
+
+    /// Sets a value as it is typed. See commitTextEdits for undo.
+    func setText(_ value: String, for target: TextTarget) {
+        if textEditOrigins[target] == nil { textEditOrigins[target] = text(target) }
+        assign(value, to: target)
+    }
+
+    func textBinding(_ target: TextTarget) -> Binding<String> {
+        Binding(get: { self.text(target) }, set: { self.setText($0, for: target) })
+    }
+
+    /// Registers the finished text edits for undo, one step per field. Called when a text field ends editing.
+    func commitTextEdits() {
+        let origins = textEditOrigins
+        textEditOrigins = [:]
+        for (target, original) in origins where text(target) != original {
+            registerTextUndo(target, restoring: original)
+        }
+    }
+
+    /// Undo restores only this one value, so it stays correct whatever was undone around it
+    private func registerTextUndo(_ target: TextTarget, restoring value: String) {
+        guard let undoManager else { return }
+        undoManager.registerUndo(withTarget: self) { model in
+            let current = model.text(target)
+            model.assign(value, to: target)
+            model.registerTextUndo(target, restoring: current)
+        }
+        undoManager.setActionName(target.actionName)
+    }
+
+    private func assign(_ value: String, to target: TextTarget) {
+        switch target {
+        case .track(let id, let keyPath):
+            if let i = index(of: id) { tracks[i][keyPath: keyPath] = value }
+        case .album(let keyPath):
+            albumTags[keyPath: keyPath] = value
+        }
     }
 
     // MARK: - Tracks

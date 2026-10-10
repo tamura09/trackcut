@@ -25,7 +25,7 @@ struct TrackListView: View {
             ScrollViewReader { proxy in
                 List(selection: Binding(get: { editor.selectedTrackID },
                                         set: { editor.selectTrack($0, seek: true) })) {
-                    ForEach($editor.tracks) { $track in
+                    ForEach(editor.tracks) { track in
                         let i = editor.index(of: track.id) ?? 0
                         HStack(spacing: 8) {
                             Toggle("", isOn: Binding(get: { track.isEnabled },
@@ -37,10 +37,10 @@ struct TrackListView: View {
                                 .monospacedDigit()
                                 .foregroundStyle(.secondary)
                                 .frame(width: 24, alignment: .trailing)
-                            TextField("Track \(i + 1)", text: $track.title)
+                            TextField("Track \(i + 1)", text: editor.textBinding(.track(track.id, \.title)))
                                 .textFieldStyle(.plain)
                             TextField(editor.albumTags.artist.isEmpty ? "アーティスト" : editor.albumTags.artist,
-                                      text: $track.artist)
+                                      text: editor.textBinding(.track(track.id, \.artist)))
                                 .textFieldStyle(.plain)
                                 .frame(width: 180)
                             FadeSummary(envelope: editor.envelope(ofTrackAt: i))
