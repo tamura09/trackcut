@@ -98,7 +98,7 @@ Version 0.1.0 does not have the updater. Replace it once by hand: download the l
 open build/TrackCut.app
 ```
 
-`build-app.sh` builds a release binary with SwiftPM, wraps it in an app bundle with an `Info.plist` (so Finder can open audio files with it), the app icon and Sparkle.framework, and signs it ad hoc. The bundle's version is `TRACKCUT_VERSION` if set, otherwise the latest `v*` tag.
+`build-app.sh` builds a release binary with SwiftPM, wraps it in an app bundle with an `Info.plist` (so Finder can open audio files, `.trackcut` projects and folders with it), the app icon and Sparkle.framework, and signs it ad hoc. The bundle's version is `TRACKCUT_VERSION` if set, otherwise the latest `v*` tag.
 
 During development you can also run it straight from SwiftPM:
 
@@ -124,7 +124,7 @@ A binary built this way shows the pre-Liquid Glass design: SwiftPM records the d
 
 ### Inspector
 
-The inspector on the right (⌥⌘I) edits the selected track: title, artist, whether to export it, and the length and curve of its fades. "Apply these fades to all tracks" copies its fades to every track; on a track too short for both, they are shortened in proportion. The album-wide tags are at the bottom.
+The inspector on the right (⌥⌘I) edits the selected track: title, artist, whether to export it, and the length and curve of its fades. "Apply these fades to all tracks" copies its fades to every track; on a track too short for both, they are shortened in proportion. Below them are the album-wide tags, then the source file's format (one row per file for joined files) with buttons to add and arrange files.
 
 ### Keyboard
 
@@ -144,7 +144,7 @@ Single-key shortcuts work anywhere in the window except while typing in a text f
 - `=` / `-`: zoom in / out
 - `Z`: zoom to the selected track; `⇧Z`: show the whole file
 
-Menu shortcuts: ⌘O open, ⌘E export, ⇧⌘D split at silences, ⌘Z / ⇧⌘Z undo / redo, ⌘= / ⌘- / ⌘0 zoom in / out / fit, ⌥⌘I inspector.
+Menu shortcuts: ⌘O open, ⌥⌘O add files, ⌘S / ⇧⌘S save project / save project as, ⌘E export, ⇧⌘D split at silences, ⌘Z / ⇧⌘Z undo / redo, ⌘= / ⌘- / ⌘0 zoom in / out / fit, ⌥⌘I inspector.
 
 ## Development
 

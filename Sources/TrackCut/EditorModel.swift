@@ -286,19 +286,20 @@ final class EditorModel: ObservableObject {
     private func initialTracks(source: AudioSource) -> [Track] {
         guard source.files.count > 1 else { return [Track(start: 0)] }
         // A file too short for a track of its own (see fitted) gives its start to the next one
-        return zip(source.urls, source.fileStarts).map { url, start in
-            var track = fileTrack(url)
+        let names = Self.titles(fromFileNames: source.urls)
+        return zip(zip(source.urls, names), source.fileStarts).map { file, start in
+            var track = fileTrack(file.0, nameTitle: file.1)
             track.start = start
             return track
         }
         .fitted(to: source.duration, minLength: Self.minTrackLength)
     }
 
-    /// The track a joined file starts out as: named after its title tag (or its name without a leading
-    /// track number), with its artist where it differs from the album's
-    private func fileTrack(_ url: URL) -> Track {
+    /// The track a joined file starts out as: named after its title tag (or `nameTitle`, its name without a
+    /// leading track number), with its artist where it differs from the album's
+    private func fileTrack(_ url: URL, nameTitle: String) -> Track {
         let tags = fileTags[Self.path(of: url)] ?? AudioTags()
-        let title = tags.title.isEmpty ? Self.title(fromFileName: url) : tags.title
+        let title = tags.title.isEmpty ? nameTitle : tags.title
         let artist = tags.artist == albumTags.artist ? "" : tags.artist
         return Track(start: 0, title: title, artist: artist)
     }
@@ -418,10 +419,13 @@ final class EditorModel: ObservableObject {
             if case .existing(let i) = slot { return i }
             return nil
         }
+        // Names of the added files, judged together (see titles(fromFileNames:))
+        let added = order.indices.filter { order[$0] == nil }
+        let names = Dictionary(uniqueKeysWithValues: zip(added, Self.titles(fromFileNames: added.map { newSource.urls[$0] })))
         performUndoable(String(localized: "Arrange Files")) {
             tracks = FileArrangement.tracks(tracks, oldStarts: source.fileStarts, order: order,
                                             newStarts: newSource.fileStarts, tolerance: Self.minTrackLength) { p in
-                fileTrack(newSource.urls[p])
+                fileTrack(newSource.urls[p], nameTitle: names[p] ?? newSource.urls[p].deletingPathExtension().lastPathComponent)
             }
             .fitted(to: newSource.duration, minLength: Self.minTrackLength)
             setSource(newSource)
@@ -440,12 +444,27 @@ final class EditorModel: ObservableObject {
         setVisible(start: visibleStart, duration: visibleDuration)
     }
 
-    /// "01 - Song.flac" -> "Song". A name that is only a number is kept as it is.
-    static func title(fromFileName url: URL) -> String {
-        let name = url.deletingPathExtension().lastPathComponent
-        let stripped = name.replacingOccurrences(of: #"^\d+(?:[-.]\d+)?(?:[ ._]+-?[ ._]*|-[ ._]*)"#, with: "",
-                                                 options: .regularExpression)
-        return stripped.isEmpty ? name : stripped
+    /// The names of files without their extension and leading track number: "01 Song.flac", "1-02 Song.flac",
+    /// "2. Song.flac" and "3 - Song.flac" all become "Song". A number followed by just a space may be part
+    /// of the title ("99 Luftballons", "7 Rings"), so it is taken for a track number only when every file
+    /// starts with one and they count up by one, as in a folder of album tracks.
+    static func titles(fromFileNames urls: [URL]) -> [String] {
+        struct Parsed { let number: Int; let title: String; let isMarked: Bool }
+        let pattern = #/^(\d+)(?:-(\d+))?(\.\s*|\s*-\s*|_+\s*|\s+)(.+)$/#
+        let names = urls.map { $0.deletingPathExtension().lastPathComponent }
+        let parsed = names.map { name -> Parsed? in
+            guard let match = name.wholeMatch(of: pattern), let number = Int(match.2 ?? match.1) else { return nil }
+            // Zero padding, a disc number or a separator other than a space mark a track number
+            let isMarked = (match.1.count > 1 && match.1.hasPrefix("0")) || match.2 != nil
+                || !match.3.allSatisfy(\.isWhitespace)
+            return Parsed(number: number, title: String(match.4), isMarked: isMarked)
+        }
+        let numbers = parsed.compactMap { $0?.number }
+        let counted = names.count > 1 && numbers.count == names.count && zip(numbers, numbers.dropFirst()).allSatisfy { $1 == $0 + 1 }
+        return zip(names, parsed).map { name, parsed in
+            guard let parsed, parsed.isMarked || counted else { return name }
+            return parsed.title
+        }
     }
 
     private func failLoading(error: Error, loadID id: UUID) {

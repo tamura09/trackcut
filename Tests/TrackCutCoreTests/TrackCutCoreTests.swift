@@ -792,3 +792,35 @@ private func arranged(_ order: [Int?], lengths: [Double]) -> [Track] {
     #expect(tracks.map(\.title) == ["A", "B", "D", "new 2"])
     #expect(tracks.map(\.start) == [0, 5, 10, 40])
 }
+
+/// PR #9 review: the part of an excluded track split off at a file boundary was exported
+@Test func splitPartsKeepTheExportSelection() {
+    let tracks = [Track(start: 0, title: "A"), Track(start: 5, title: "Excluded", isEnabled: false)]
+    let result = FileArrangement.tracks(tracks, oldStarts: [0, 10], order: [1, 0], newStarts: [0, 20],
+                                        tolerance: 0.1) { _ in Track(start: 0) }
+    #expect(result.map(\.start) == [0, 20, 25])
+    #expect(result.map(\.isEnabled) == [false, true, false])
+}
+
+/// PR #9 review: starts far below zero survived fitting and crashed the time display
+@Test func fittingMovesStartsIntoTheSource() {
+    let fitted = [Track(start: -1e20), Track(start: -1e19), Track(start: 0), Track(start: 1e9)]
+        .fitted(to: 13, minLength: 0.1)
+    #expect(fitted.count == 1)
+    #expect(fitted[0].start == 0)
+}
+
+/// PR #9 review: re-encoded segments of joined AAC files were written at 256 kbps whatever the source's rate
+@Test func reencodedJoinedAACKeepsAboutTheSourceBitRate() async throws {
+    let dir = try makeTempDir()
+    let wav = try makeTestWAV(in: dir)
+    let aac = try await AudioExporter.export(
+        source: wav, segments: [ExportSegment(start: 0, end: 13, fileBaseName: "aac")], format: .aac,
+        options: ExportOptions(aacBitRate: 96_000), to: dir)[0]
+    let source = try AudioSource(urls: [aac, aac])
+    let out = try await AudioExporter.export(
+        source: source, segments: [ExportSegment(start: 0, end: 13, fileBaseName: "faded", fadeIn: Fade(duration: 2))],
+        format: .sameAsSource, to: dir.appendingPathComponent("out", isDirectory: true).creatingDirectory())[0]
+    let bitRate = try #require(try SourceAudioInfo(url: out).bitRate)
+    #expect(bitRate < 140_000, "\(bitRate)")
+}

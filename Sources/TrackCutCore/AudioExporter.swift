@@ -241,7 +241,7 @@ enum ResolvedFormat: Equatable {
 /// read in to the output format, sample rate included. The stream description is given explicitly because
 /// AVAudioFile gets some formats wrong:
 /// - FLAC / ALAC: AVAudioFile's encoders ignore the requested bit depth and always write 24 bit, so
-///   mFormatFlags carries the source bit depth
+///   mFormatFlags carries the bit depth to write
 /// - 64-bit float WAV: AVAudioFile writes Float32 when asked for 64-bit float
 private final class AudioFileWriter {
     private var ref: ExtAudioFileRef?
@@ -392,11 +392,13 @@ public enum AudioExporter {
         let resolved = ResolvedFormat(format, source: info, options: options)
         let sampleRate = ResolvedFormat.requestedSampleRate(format, source: info, options: options)
         // An AAC source is cut as is only where it can be: a segment within one AAC file and without fades
-        // (which change the audio). Other segments are re-encoded at about the source's bit rate.
+        // (which change the audio). Other segments are re-encoded at about the bit rate of the AAC file they
+        // start in, or of the source's AAC files.
         let formats = segments.map { segment -> ResolvedFormat in
             guard resolved == .aacPassthrough else { return resolved }
             if segment.envelope.isFlat, passthroughFile(for: segment, in: source) != nil { return resolved }
-            return .aac(bitRate: info.aacBitRate)
+            let file = source.file(at: AVAudioFramePosition((segment.start * source.sampleRate).rounded()))
+            return .aac(bitRate: file.map { $0.info.isAAC ? $0.info.aacBitRate : info.aacBitRate } ?? info.aacBitRate)
         }
         let urls = outputURLs(source: source, segments: segments, format: format, directory: directory)
         // An existing output is replaced once its new file is complete. If that output were a source file,

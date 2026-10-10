@@ -53,7 +53,13 @@ extension Array where Element == Track {
     public func fitted(to duration: Double, minLength: Double) -> [Track] {
         var result: [Track] = []
         var ids = Set<Track.ID>()
-        for var track in sorted(by: { $0.start < $1.start }) {
+        // Starts outside the source (a hand-edited project) are moved into it first
+        let clamped = map { track in
+            var track = track
+            track.start = Swift.min(Swift.max(track.start, 0), Swift.max(duration, 0))
+            return track
+        }
+        for var track in clamped.sorted(by: { $0.start < $1.start }) {
             if !ids.insert(track.id).inserted {
                 track = Track(start: track.start, title: track.title, artist: track.artist, isEnabled: track.isEnabled,
                               fadeIn: track.fadeIn, fadeOut: track.fadeOut)

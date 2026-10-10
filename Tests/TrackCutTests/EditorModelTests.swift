@@ -221,7 +221,8 @@ extension AppTests {
             #expect(editor.source?.files.count == 3)
             #expect(abs(editor.duration - 39) < 0.001)
             #expect(editor.tracks.map(\.start) == [0, 13, 26])
-            #expect(editor.tracks.map(\.title) == ["Opening", "The Ballad", "Finale"])
+            // "10" could be part of the title: the numbers do not count up and it is not padded
+            #expect(editor.tracks.map(\.title) == ["Opening", "The Ballad", "10 Finale"])
             // The files agree on the album but not on the artist, so each track keeps its file's artist
             #expect(editor.albumTags.album == "Live")
             #expect(editor.albumTags.artist == "")
@@ -347,15 +348,19 @@ extension AppTests {
         }
 
         @Test func titlesFromFileNamesLoseTheTrackNumber() {
-            func title(_ name: String) -> String { EditorModel.title(fromFileName: URL(fileURLWithPath: "/x/" + name)) }
-            #expect(title("01 Song.flac") == "Song")
-            #expect(title("01 - Song.flac") == "Song")
-            #expect(title("1-02 Song.flac") == "Song")
-            #expect(title("03. Song.flac") == "Song")
-            #expect(title("04_Song.flac") == "Song")
-            #expect(title("05-Song.flac") == "Song")
-            #expect(title("1999.flac") == "1999")
-            #expect(title("Song.flac") == "Song")
+            func titles(_ names: [String]) -> [String] {
+                EditorModel.titles(fromFileNames: names.map { URL(fileURLWithPath: "/x/" + $0) })
+            }
+            // Marked as track numbers by padding, a disc number or a separator
+            #expect(titles(["01 Song.flac"]) == ["Song"])
+            #expect(titles(["01 - Song.flac", "1-02 Song.flac", "03. Song.flac", "04_Song.flac", "05-Song.flac"])
+                    == Array(repeating: "Song", count: 5))
+            #expect(titles(["1999.flac", "Song.flac"]) == ["1999", "Song"])
+            // PR #9 review: a number and a space may be part of the title
+            #expect(titles(["99 Luftballons.flac"]) == ["99 Luftballons"])
+            #expect(titles(["7 Rings.wav", "2001 A Space Odyssey.flac"]) == ["7 Rings", "2001 A Space Odyssey"])
+            // unless every file has one and they count up
+            #expect(titles(["1 One.wav", "2 Two.wav", "3 Three.wav"]) == ["One", "Two", "Three"])
         }
 
         @Test func undoingBackToTheSavedStateClearsUnsavedChanges() async throws {

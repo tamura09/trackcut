@@ -53,13 +53,19 @@ public struct AudioSource: Sendable, Equatable {
     }
 
     public var urls: [URL] { files.map(\.url) }
+
+    /// The file at timeline frame `frame` (the last file for a frame at or past the end)
+    func file(at frame: AVAudioFramePosition) -> File? {
+        files.last { $0.startFrame <= frame } ?? files.first
+    }
     public var totalFrames: AVAudioFramePosition { files.last.map { $0.startFrame + $0.frameCount } ?? 0 }
     public var duration: Double { Double(totalFrames) / sampleRate }
 
     /// Start of each file in seconds on the timeline
     public var fileStarts: [Double] { files.map { Double($0.startFrame) / sampleRate } }
 
-    /// Whether every file has the timeline's format, so samples are read as they are, without conversion
+    /// Whether some file differs from the timeline's format and has to be converted as it is read. When
+    /// false, every file's samples are read as they are.
     var needsConversion: Bool {
         files.contains { $0.info.sampleRate != sampleRate || $0.info.channelCount != channelCount }
     }
@@ -71,9 +77,11 @@ public struct AudioSource: Sendable, Equatable {
         guard files.count > 1 else { return first }
         let lossless = files.filter(\.info.isLossless)
         let bitDepth = lossless.map(\.info.bitDepth).max() ?? first.bitDepth
+        // The highest bit rate of the AAC files: what re-encoded AAC is written at by default
+        let aacBitRate = files.filter(\.info.isAAC).compactMap(\.info.bitRate).max()
         return SourceAudioInfo(formatID: first.formatID, bitDepth: bitDepth,
                                isFloat: first.isFloat && lossless.allSatisfy(\.info.isFloat),
-                               sampleRate: sampleRate, channelCount: channelCount, duration: duration, bitRate: nil,
+                               sampleRate: sampleRate, channelCount: channelCount, duration: duration, bitRate: aacBitRate,
                                fileSize: files.compactMap(\.info.fileSize).reduce(0, +))
     }
 
