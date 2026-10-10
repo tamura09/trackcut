@@ -93,9 +93,13 @@ public struct SourceAudioInfo: Sendable, Equatable {
     public let bitRate: Int?
     /// Size of the whole file in bytes, tags included
     public let fileSize: Int64?
+    /// Whether any of the audio is lossless. For one file the same as isLossless; a joined source can start
+    /// with a lossy file and still have lossless ones, whose bit depth `bitDepth` then is.
+    let hasLosslessAudio: Bool
 
     init(formatID: AudioFormatID, bitDepth: Int, isFloat: Bool, sampleRate: Double, channelCount: Int,
-         duration: Double, bitRate: Int?, fileSize: Int64?) {
+         duration: Double, bitRate: Int?, fileSize: Int64?, hasLosslessAudio: Bool) {
+        self.hasLosslessAudio = hasLosslessAudio
         self.formatID = formatID
         self.bitDepth = bitDepth
         self.isFloat = isFloat
@@ -115,6 +119,7 @@ public struct SourceAudioInfo: Sendable, Equatable {
         duration = Double(file.length) / file.fileFormat.sampleRate
         bitRate = Self.readBitRate(url)
         fileSize = (try? url.resourceValues(forKeys: [.fileSizeKey]).fileSize).flatMap { $0.map(Int64.init) }
+        hasLosslessAudio = [kAudioFormatLinearPCM, kAudioFormatFLAC, kAudioFormatAppleLossless].contains(asbd.mFormatID)
 
         switch asbd.mFormatID {
         case kAudioFormatLinearPCM:
@@ -197,10 +202,12 @@ enum ResolvedFormat: Equatable {
     }
 
     init(_ format: ExportFormat, source: SourceAudioInfo, options: ExportOptions = ExportOptions()) {
-        let sourceBits = source.isLossless ? source.bitDepth : 16
+        // For a joined source, the depth and floating point come from all its lossless files, whatever the
+        // first file is (see AudioSource.info)
+        let sourceBits = source.hasLosslessAudio ? source.bitDepth : 16
         let bits = format == .sameAsSource ? sourceBits : options.bitDepth ?? sourceBits
-        // A chosen depth is always an integer one
-        let isFloat = bits == sourceBits && source.isFloat && source.formatID == kAudioFormatLinearPCM
+        // A chosen depth is always an integer one. Only PCM files are floating point.
+        let isFloat = bits == sourceBits && source.isFloat
         // WAV stores whole bytes. FLAC supports 16/20/24 bit, ALAC 16/20/24/32 bit. Other depths go to the
         // nearest supported depth above them, or the highest one (e.g. 64-bit float becomes 24-bit FLAC /
         // 32-bit ALAC).

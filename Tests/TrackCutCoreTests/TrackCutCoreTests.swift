@@ -867,30 +867,36 @@ private func arranged(_ order: [Int?], lengths: [Double]) -> [Track] {
     #expect(converted == 48_000)
 }
 
+/// Values a Float32 round trip cannot represent exactly
+private let int32Pattern: [Int32] = [0x4000_0001, -0x4000_0001, 0x7FFF_FFFF, 1]
+
+/// A 0.1-second mono 44.1 kHz WAV
+private func writeMonoWAV(in dir: URL, name: String, bits: Int, isFloat: Bool,
+                          _ fill: (AVAudioPCMBuffer) -> Void) throws -> URL {
+    let url = dir.appendingPathComponent(name)
+    let settings: [String: Any] = [
+        AVFormatIDKey: kAudioFormatLinearPCM, AVSampleRateKey: 44_100.0, AVNumberOfChannelsKey: 1,
+        AVLinearPCMBitDepthKey: bits, AVLinearPCMIsFloatKey: isFloat, AVLinearPCMIsBigEndianKey: false,
+    ]
+    let file = try AVAudioFile(forWriting: url, settings: settings,
+                               commonFormat: isFloat ? .pcmFormatFloat32 : .pcmFormatInt32, interleaved: false)
+    let buffer = AVAudioPCMBuffer(pcmFormat: file.processingFormat, frameCapacity: 4_410)!
+    buffer.frameLength = 4_410
+    fill(buffer)
+    try file.write(from: buffer)
+    return url
+}
+
 /// PR #9 review: a 32-bit integer file joined with a Float32 one was rounded to Float32
 @Test func deepIntegerFilesNextToFloatOnesAreExportedAsFloat64() async throws {
     let dir = try makeTempDir()
-    func write(_ name: String, bits: Int, isFloat: Bool, _ fill: (AVAudioPCMBuffer) -> Void) throws -> URL {
-        let url = dir.appendingPathComponent(name)
-        let settings: [String: Any] = [
-            AVFormatIDKey: kAudioFormatLinearPCM, AVSampleRateKey: 44_100.0, AVNumberOfChannelsKey: 1,
-            AVLinearPCMBitDepthKey: bits, AVLinearPCMIsFloatKey: isFloat, AVLinearPCMIsBigEndianKey: false,
-        ]
-        let file = try AVAudioFile(forWriting: url, settings: settings,
-                                   commonFormat: isFloat ? .pcmFormatFloat32 : .pcmFormatInt32, interleaved: false)
-        let buffer = AVAudioPCMBuffer(pcmFormat: file.processingFormat, frameCapacity: 4_410)!
-        buffer.frameLength = 4_410
-        fill(buffer)
-        try file.write(from: buffer)
-        return url
+    let int32 = try writeMonoWAV(in: dir, name: "int32.wav", bits: 32, isFloat: false) { buffer in
+        for i in 0..<4_410 { buffer.int32ChannelData![0][i] = int32Pattern[i % int32Pattern.count] }
     }
-    let samples: [Int32] = [0x4000_0001, -0x4000_0001, 0x7FFF_FFFF, 1]
-    let int32 = try write("int32.wav", bits: 32, isFloat: false) { buffer in
-        for i in 0..<4_410 { buffer.int32ChannelData![0][i] = samples[i % samples.count] }
-    }
-    let float32 = try write("float32.wav", bits: 32, isFloat: true) { buffer in
+    let float32 = try writeMonoWAV(in: dir, name: "float32.wav", bits: 32, isFloat: true) { buffer in
         for i in 0..<4_410 { buffer.floatChannelData![0][i] = 0.25 }
     }
+    let samples = int32Pattern
     let source = try AudioSource(urls: [float32, int32])
     #expect(source.info.isFloat && source.info.bitDepth == 64)
 
@@ -905,4 +911,43 @@ private func arranged(_ order: [Int?], lengths: [Double]) -> [Track] {
     let doubles = buffer.audioBufferList.pointee.mBuffers.mData!.assumingMemoryBound(to: Double.self)
     let values = (0..<Int(buffer.frameLength)).map { Int64(doubles[$0] * 2_147_483_648) }
     #expect(values == (0..<4_410).map { Int64(samples[$0 % samples.count]) })
+}
+
+/// PR #9 review: "same as source" took its bit depth and floating point from the first file only
+@Test func sameAsSourceDepthComesFromEveryLosslessFile() async throws {
+    let dir = try makeTempDir()
+    let wav = try makeTestWAV(in: dir)
+    let aac = try await AudioExporter.export(
+        source: wav, segments: [ExportSegment(start: 0, end: 13, fileBaseName: "aac")], format: .aac, to: dir)[0]
+    let flac24 = try await AudioExporter.export(
+        source: wav, segments: [ExportSegment(start: 0, end: 13, fileBaseName: "flac24")], format: .flac,
+        options: ExportOptions(bitDepth: 24), to: dir)[0]
+    let aacFirst = try AudioSource(urls: [aac, flac24]).info
+    #expect(AudioExporter.outputBitDepth(source: aacFirst, format: .flac, options: ExportOptions())! == (24, false))
+    #expect(AudioExporter.outputBitDepth(source: aacFirst, format: .wav, options: ExportOptions())! == (24, false))
+
+    let float32 = try writeMonoWAV(in: dir, name: "float32.wav", bits: 32, isFloat: true) { buffer in
+        for i in 0..<4_410 { buffer.floatChannelData![0][i] = 1.5 }
+    }
+    let flacFirst = try AudioSource(urls: [flac24, float32]).info
+    #expect(AudioExporter.outputBitDepth(source: flacFirst, format: .wav, options: ExportOptions())! == (32, true))
+}
+
+/// PR #9 review: a mono file joined with stereo ones at the same rate went through Float32
+@Test func monoFilesAreCopiedToEveryChannelExactly() throws {
+    let dir = try makeTempDir()
+    let mono = try writeMonoWAV(in: dir, name: "mono32.wav", bits: 32, isFloat: false) { buffer in
+        for i in 0..<4_410 { buffer.int32ChannelData![0][i] = int32Pattern[i % int32Pattern.count] }
+    }
+    let source = try AudioSource(urls: [mono, try makeTestWAV(in: dir)])
+    #expect(source.channelCount == 2)
+    let reader = try SourceReader(source: source, commonFormat: .pcmFormatInt32)
+    var left: [Int32] = [], right: [Int32] = []
+    try reader.read(0..<4_410) { buffer in
+        left += (0..<Int(buffer.frameLength)).map { buffer.int32ChannelData![0][$0] }
+        right += (0..<Int(buffer.frameLength)).map { buffer.int32ChannelData![1][$0] }
+    }
+    let expected = (0..<4_410).map { int32Pattern[$0 % int32Pattern.count] }
+    #expect(left == expected)
+    #expect(right == expected)
 }

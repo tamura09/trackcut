@@ -82,7 +82,8 @@ public struct AudioSource: Sendable, Equatable {
         return SourceAudioInfo(formatID: first.formatID, bitDepth: bitDepth,
                                isFloat: isFloat,
                                sampleRate: sampleRate, channelCount: channelCount, duration: duration, bitRate: aacBitRate,
-                               fileSize: files.compactMap(\.info.fileSize).reduce(0, +))
+                               fileSize: files.compactMap(\.info.fileSize).reduce(0, +),
+                               hasLosslessAudio: !lossless.isEmpty)
     }
 
     /// The supported audio files directly inside `folder` (not in subfolders), in the order Finder lists them
@@ -143,7 +144,9 @@ final class SourceReader {
             let overlap = range.clamped(to: fileRange)
             guard !overlap.isEmpty else { continue }
             let local = (overlap.lowerBound - file.startFrame)..<(overlap.upperBound - file.startFrame)
-            if file.info.sampleRate == source.sampleRate && file.info.channelCount == source.channelCount {
+            // A file at the timeline's rate needs at most its channels mapped, which is done here without
+            // touching the samples; only a different rate goes through a converter (and Float32)
+            if file.info.sampleRate == source.sampleRate {
                 try readDirectly(file, local, buffer: buffer, body)
             } else {
                 try readConverted(file, local, buffer: buffer, body)
@@ -159,8 +162,10 @@ final class SourceReader {
         let input = try AVAudioFile(forReading: file.url,
                                     commonFormat: widensIntegers ? .pcmFormatInt32 : processingFormat.commonFormat,
                                     interleaved: false)
-        let integers = widensIntegers ? AVAudioPCMBuffer(pcmFormat: input.processingFormat, frameCapacity: buffer.frameCapacity) : nil
-        if widensIntegers, integers == nil { throw AudioError.bufferAllocationFailed }
+        // Read into a buffer of the file's own format when its samples or channels have to be mapped
+        let mapped = widensIntegers || input.processingFormat.channelCount != processingFormat.channelCount
+        let fileBuffer = mapped ? AVAudioPCMBuffer(pcmFormat: input.processingFormat, frameCapacity: buffer.frameCapacity) : nil
+        if mapped, fileBuffer == nil { throw AudioError.bufferAllocationFailed }
         var delivered = 0
         if range.lowerBound < input.length {
             input.framePosition = range.lowerBound
@@ -168,9 +173,9 @@ final class SourceReader {
             while remaining > 0 {
                 try Task.checkCancellation()
                 let count = AVAudioFrameCount(min(Int(buffer.frameCapacity), remaining))
-                if let integers {
-                    try input.read(into: integers, frameCount: count)
-                    Self.widen(integers, into: buffer)
+                if let fileBuffer {
+                    try input.read(into: fileBuffer, frameCount: count)
+                    Self.map(fileBuffer, into: buffer)
                 } else {
                     try input.read(into: buffer, frameCount: count)
                 }
@@ -238,15 +243,31 @@ final class SourceReader {
         try pad(remaining, buffer: buffer, body)
     }
 
-    /// Copies Int32 samples into a Float64 buffer of the same channel count, exactly
-    private static func widen(_ source: AVAudioPCMBuffer, into target: AVAudioPCMBuffer) {
+    /// Copies a file's samples into a buffer of the processing format, exactly: Int32 samples are widened
+    /// to Float64 when the target is Float64, a mono file goes to every channel, and channels the file
+    /// does not have are silent.
+    private static func map(_ source: AVAudioPCMBuffer, into target: AVAudioPCMBuffer) {
         let frames = Int(source.frameLength)
         target.frameLength = source.frameLength
-        guard let from = source.int32ChannelData else { return }
+        let from = UnsafeMutableAudioBufferListPointer(source.mutableAudioBufferList)
         let to = UnsafeMutableAudioBufferListPointer(target.mutableAudioBufferList)
-        for channel in 0..<Int(source.format.channelCount) {
-            guard let data = to[channel].mData?.assumingMemoryBound(to: Double.self) else { continue }
-            for i in 0..<frames { data[i] = Double(from[channel][i]) / 2_147_483_648 }
+        let sourceChannels = Int(source.format.channelCount)
+        let widens = source.format.commonFormat == .pcmFormatInt32 && target.format.commonFormat == .pcmFormatFloat64
+        for channel in 0..<Int(target.format.channelCount) {
+            guard let out = to[channel].mData else { continue }
+            let bytes = Int(to[channel].mDataByteSize)
+            let input = sourceChannels == 1 ? 0 : channel
+            guard input < sourceChannels, let data = from[input].mData else {
+                memset(out, 0, bytes)
+                continue
+            }
+            if widens {
+                let samples = data.assumingMemoryBound(to: Int32.self)
+                let doubles = out.assumingMemoryBound(to: Double.self)
+                for i in 0..<frames { doubles[i] = Double(samples[i]) / 2_147_483_648 }
+            } else {
+                memcpy(out, data, min(bytes, Int(from[input].mDataByteSize)))
+            }
         }
     }
 
