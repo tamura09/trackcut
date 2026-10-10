@@ -41,6 +41,14 @@ public struct Fade: Hashable, Sendable {
     public var isEnabled: Bool { duration > 0 }
 }
 
+/// Which end of a track a fade belongs to
+public enum FadeEdge: Sendable {
+    /// Fade-in at the start of the track
+    case start
+    /// Fade-out at the end of the track
+    case end
+}
+
 /// Gain over one segment with a fade at each end
 public struct FadeEnvelope: Sendable, Equatable {
     public let length: Double

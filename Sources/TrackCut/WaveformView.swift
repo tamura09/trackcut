@@ -28,7 +28,7 @@ final class WaveformNSView: NSView {
     /// A fade handle of the selected track
     private struct FadeHandle {
         let trackID: Track.ID
-        let edge: EditorModel.FadeEdge
+        let edge: FadeEdge
     }
 
     var mode: Mode = .detail

@@ -36,8 +36,8 @@ Exported files get the title, track number and total, artist, album, album artis
 
 ## Requirements
 
-- macOS 15 or later
-- Swift 6 toolchain (Xcode or the Command Line Tools)
+- Running: macOS 15 or later
+- Building: Xcode 26 or later, or the Command Line Tools for it. The app uses the Liquid Glass APIs from the macOS 26 SDK; on older systems it checks at run time and falls back, but older SDKs cannot compile it
 
 ## Build and run
 
@@ -72,7 +72,7 @@ A binary built this way shows the pre-Liquid Glass design: SwiftPM records the d
 
 ### Inspector
 
-The inspector on the right (⌥⌘I) edits the selected track: title, artist, whether to export it, and the length and curve of its fades. "Apply these fades to all tracks" copies its fades to every track. The album-wide tags are at the bottom.
+The inspector on the right (⌥⌘I) edits the selected track: title, artist, whether to export it, and the length and curve of its fades. "Apply these fades to all tracks" copies its fades to every track; on a track too short for both, they are shortened in proportion. The album-wide tags are at the bottom.
 
 ### Keyboard
 

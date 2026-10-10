@@ -45,7 +45,7 @@ struct InspectorView: View {
 
 private struct FadeSection: View {
     @ObservedObject var editor: EditorModel
-    let edge: EditorModel.FadeEdge
+    let edge: FadeEdge
     let index: Int
 
     private var fade: Fade { editor.fade(edge, ofTrackAt: index) }

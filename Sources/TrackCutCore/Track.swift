@@ -25,6 +25,53 @@ public struct Track: Identifiable, Hashable, Sendable {
     }
 }
 
+extension Track {
+    public func fade(_ edge: FadeEdge) -> Fade {
+        edge == .start ? fadeIn : fadeOut
+    }
+
+    /// Sets the length of one fade, limited so the two fades do not overlap. The other fade is first set
+    /// to the length it is applied with (see FadeEnvelope), so editing one fade never changes the other.
+    public mutating func setFadeDuration(_ edge: FadeEdge, _ duration: Double, trackLength: Double) {
+        let envelope = FadeEnvelope(length: trackLength, fadeIn: fadeIn, fadeOut: fadeOut)
+        fadeIn.duration = envelope.fadeIn.duration
+        fadeOut.duration = envelope.fadeOut.duration
+        let other = edge == .start ? fadeOut.duration : fadeIn.duration
+        let clamped = min(max(duration, 0), max(envelope.length - other, 0))
+        switch edge {
+        case .start: fadeIn.duration = clamped
+        case .end: fadeOut.duration = clamped
+        }
+    }
+}
+
+extension Array where Element == Track {
+    /// The tracks split at `times` instead. Titles, artists, the export selection and IDs are carried over by
+    /// position in the list. Fades stay where they are in the file: the fade-in at the start and the
+    /// fade-out at the end of the file, and the fades on both sides of a split point that is kept (one
+    /// within `tolerance` seconds of a new one). Other fades are dropped.
+    public func replacingSplits(with times: [Double], tolerance: Double) -> [Track] {
+        guard let first, let last else { return [] }
+        var result = ([0] + times.sorted()).enumerated().map { i, start in
+            guard i < count else { return Track(start: start) }
+            var track = self[i]
+            track.start = start
+            track.fadeIn = Fade()
+            track.fadeOut = Fade()
+            return track
+        }
+        result[0].fadeIn = first.fadeIn
+        result[result.count - 1].fadeOut = last.fadeOut
+        for j in indices.dropFirst() {
+            guard let k = result.indices.dropFirst().first(where: { abs(result[$0].start - self[j].start) <= tolerance })
+            else { continue }
+            result[k].fadeIn = self[j].fadeIn
+            result[k - 1].fadeOut = self[j - 1].fadeOut
+        }
+        return result
+    }
+}
+
 public enum TimeFormat {
     /// e.g. 3:05.42 / 1:02:03.50
     public static func string(_ seconds: Double, fractionDigits: Int = 2) -> String {

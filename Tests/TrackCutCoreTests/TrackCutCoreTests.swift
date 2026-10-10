@@ -399,3 +399,41 @@ private func readSamples(_ url: URL) throws -> [Float] {
     // The first 0.1 s is at most 5% of full level, while 2.5 s in is past the fade
     #expect(rms(0..<4_410) < rms(110_250..<114_660) * 0.1)
 }
+
+@Test func editingAShortenedFadeKeepsTheOtherAsApplied() {
+    // 4 s + 4 s of fades on a track that is now 5 s long: both are applied at 2.5 s
+    var track = Track(start: 0, fadeIn: Fade(duration: 4), fadeOut: Fade(duration: 4))
+    track.setFadeDuration(.start, 2, trackLength: 5)
+    #expect(track.fadeIn.duration == 2)
+    #expect(track.fadeOut.duration == 2.5)
+    // Limited by the other fade
+    track.setFadeDuration(.start, 4, trackLength: 5)
+    #expect(track.fadeIn.duration == 2.5)
+    #expect(track.fadeOut.duration == 2.5)
+}
+
+@Test func replacingSplitsKeepsFadesWhereTheyAreInTheFile() {
+    let old = [
+        Track(start: 0, title: "A", isEnabled: false, fadeIn: Fade(duration: 2), fadeOut: Fade(duration: 3)),
+        Track(start: 30, title: "B", fadeIn: Fade(duration: 1, curve: .sCurve), fadeOut: Fade(duration: 5)),
+    ]
+    let new = old.replacingSplits(with: [50, 10, 30.05], tolerance: 0.1)
+    #expect(new.map(\.start) == [0, 10, 30.05, 50])
+    // Names, export selection and IDs by position in the list
+    #expect(new.map(\.title) == ["A", "B", "", ""])
+    #expect(new.map(\.isEnabled) == [false, true, true, true])
+    #expect(new[0].id == old[0].id && new[1].id == old[1].id)
+    // Start and end of the file
+    #expect(new[0].fadeIn.duration == 2)
+    #expect(new[3].fadeOut.duration == 5)
+    // The split point at 30 s is kept (30.05 s), so are the fades on both sides of it
+    #expect(new[1].fadeOut.duration == 3)
+    #expect(new[2].fadeIn == Fade(duration: 1, curve: .sCurve))
+    // New split points get no fades
+    #expect(!new[0].fadeOut.isEnabled && !new[1].fadeIn.isEnabled)
+    #expect(!new[2].fadeOut.isEnabled && !new[3].fadeIn.isEnabled)
+
+    // One track with a fade-out at the end of the file, split into three
+    let single = [Track(start: 0, fadeOut: Fade(duration: 5))].replacingSplits(with: [10, 20], tolerance: 0.1)
+    #expect(single.map(\.fadeOut.duration) == [0, 0, 5])
+}

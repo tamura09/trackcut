@@ -261,16 +261,10 @@ final class EditorModel: ObservableObject {
         }
     }
 
-    /// Replaces all split points. Titles, artists, the export selection and fades are carried over by position.
+    /// Replaces all split points. See replacingSplits(with:tolerance:) for what is carried over.
     func applySplits(_ times: [Double]) {
         performUndoable("無音区間で分割") {
-            let old = tracks
-            tracks = ([0] + times.sorted()).enumerated().map { i, start in
-                guard i < old.count else { return Track(start: start) }
-                var track = old[i]
-                track.start = start
-                return track
-            }
+            tracks = tracks.replacingSplits(with: times, tolerance: Self.minTrackLength)
             selectedTrackID = tracks.first?.id
         }
     }
@@ -289,17 +283,8 @@ final class EditorModel: ObservableObject {
 
     // MARK: - Fades
 
-    enum FadeEdge {
-        /// Fade-in at the start of the track
-        case start
-        /// Fade-out at the end of the track
-        case end
-
-        var actionName: String { self == .start ? "フェードイン" : "フェードアウト" }
-    }
-
     func fade(_ edge: FadeEdge, ofTrackAt i: Int) -> Fade {
-        edge == .start ? tracks[i].fadeIn : tracks[i].fadeOut
+        tracks[i].fade(edge)
     }
 
     /// The fades of a track as they are applied, shortened when the track is shorter than both together
@@ -307,15 +292,9 @@ final class EditorModel: ObservableObject {
         FadeEnvelope(length: end(ofTrackAt: i) - tracks[i].start, fadeIn: tracks[i].fadeIn, fadeOut: tracks[i].fadeOut)
     }
 
-    /// Sets a fade's length without registering undo, limited so it does not overlap the other fade
+    /// Sets a fade's length without registering undo (see Track.setFadeDuration)
     func setFadeDuration(_ edge: FadeEdge, _ duration: Double, ofTrackAt i: Int) {
-        let length = end(ofTrackAt: i) - tracks[i].start
-        let other = fade(edge == .start ? .end : .start, ofTrackAt: i).duration
-        let clamped = min(max(duration, 0), max(length - other, 0))
-        switch edge {
-        case .start: tracks[i].fadeIn.duration = clamped
-        case .end: tracks[i].fadeOut.duration = clamped
-        }
+        tracks[i].setFadeDuration(edge, duration, trackLength: end(ofTrackAt: i) - tracks[i].start)
     }
 
     func setFadeCurve(_ edge: FadeEdge, _ curve: FadeCurve, ofTrackAt i: Int) {
@@ -343,17 +322,14 @@ final class EditorModel: ObservableObject {
         }
     }
 
-    /// Copies the fades of the given track to every track
+    /// Copies the fades of the given track to every track. Tracks too short for both are not limited here:
+    /// FadeEnvelope shortens both fades in proportion, so neither is lost.
     func applyFadesToAllTracks(from i: Int) {
         let fadeIn = tracks[i].fadeIn, fadeOut = tracks[i].fadeOut
         performUndoable("フェードをすべてのトラックに適用") {
             for j in tracks.indices {
-                tracks[j].fadeIn.curve = fadeIn.curve
-                tracks[j].fadeOut.curve = fadeOut.curve
-                tracks[j].fadeIn.duration = 0
-                tracks[j].fadeOut.duration = 0
-                setFadeDuration(.start, fadeIn.duration, ofTrackAt: j)
-                setFadeDuration(.end, fadeOut.duration, ofTrackAt: j)
+                tracks[j].fadeIn = fadeIn
+                tracks[j].fadeOut = fadeOut
             }
         }
     }
@@ -447,4 +423,8 @@ final class EditorModel: ObservableObject {
             setVisible(start: time - visibleDuration * 0.02, duration: visibleDuration)
         }
     }
+}
+
+extension FadeEdge {
+    var actionName: String { self == .start ? "フェードイン" : "フェードアウト" }
 }
