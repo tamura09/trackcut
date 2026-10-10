@@ -1,53 +1,92 @@
-# repo-template
+# trackcut
 
-新しいリポジトリの雛形。`.github/workflows/pr-review.yml` だけが入っている。
+A macOS app for splitting a long recording (a live set, a ripped album, a radio show) into one file per track while looking at the waveform. It reads FLAC, M4A and WAV, and writes each track as its own file with tags.
 
-## 使い方
+The user interface is in Japanese.
 
-```bash
-gh repo create tamura09/<NAME> --private --template tamura09/repo-template
+## Features
+
+- Open FLAC / M4A (AAC, ALAC) / WAV files from the Open dialog (⌘O), by dropping them on the window, or with "Open With" in Finder
+- Two waveform views: an overview of the whole file and a zoomable detail view with a time ruler
+- Place split points by double-clicking the waveform, pressing `M` at the playhead, or from the context menu; drag them to adjust
+- Detect split points automatically from silent gaps, with an adjustable threshold (dB) and minimum gap length
+- Name each track, choose which tracks to export, and set an artist per track
+- Export every track to its own file named `01 Title.ext`
+
+### Export formats
+
+- **Same as source** (default)
+  - WAV, FLAC and ALAC keep the source bit depth
+  - AAC is cut without re-encoding
+- **WAV**
+- **FLAC**
+- **Apple Lossless (m4a)**
+- **AAC 256 kbps (m4a)**: the source must be 48 kHz or lower. When the source is already AAC, it is cut without re-encoding
+
+### Tags
+
+Exported files get the title, track number and total, artist, album, album artist, year and genre. Album-wide fields are prefilled from the source file's tags when it has any.
+
+- **FLAC**: Vorbis comment
+- **M4A**: iTunes metadata
+- **WAV**: LIST/INFO chunk. INFO has no field for the album artist or the track total, so those two are not written
+
+## Requirements
+
+- macOS 15 or later
+- Swift 6 toolchain (Xcode or the Command Line Tools)
+
+## Build and run
+
+```sh
+./build-app.sh
+open build/TrackCut.app
 ```
 
-作ったあとに [tamura09/github-terraform](https://github.com/tamura09/github-terraform)
-の `locals.tf` へ追加すると、デフォルトブランチと `main` のブランチ保護、マージ方法が
-Terraform の管理下に入る。追加のしかたはそちらの README にある。
+`build-app.sh` builds a release binary with SwiftPM, wraps it in an app bundle with an `Info.plist` (so Finder can open audio files with it), and signs it ad hoc.
 
-## 入っているもの
+During development you can also run it straight from SwiftPM:
 
-### `.github/workflows/pr-review.yml`
-
-`pr-review.yml` は [tamura09/claude-pr-review](https://github.com/tamura09/claude-pr-review)
-の再利用可能ワークフローを呼ぶだけ。PR ごとに Claude がレビューを投稿し、
-`claude-review` のチェックを出す。マージも承認もしない。
-
-OAuth トークンはリポジトリの secret には置かない。AWS の SSM に1本だけ置いてあり、
-呼び出されたワークフローが OIDC で読む。だから新しいリポジトリでも secret の登録は
-要らない。
-
-### `renovate.json`
-
-依存の更新を [tamura09/renovate-runner](https://github.com/tamura09/renovate-runner)
-に任せるための設定。共有プリセットを extends するだけで、リポジトリ固有の指定は
-書かない。
-
-**置いてあるだけでは動かない**。実際に更新 PR が来るのは
-[tamura09/github-terraform](https://github.com/tamura09/github-terraform) の
-`locals.tf` で `enable_renovate = true` を書いたリポジトリだけ。既定は無効なので、
-テンプレートから作ったままでは Renovate は走らない。
-
-有効にしたくなったら `locals.tf` にフラグを足す。このファイルは触らなくてよい。
-
-```hcl
-    <NAME> = {
-      enable_renovate = true
-    }
+```sh
+swift run TrackCut
 ```
 
-言語ごとの設定 (npm のグループ分けなど) が要るときは、このファイルに
-`packageRules` を足すのではなく、まず共有プリセット側を直すか検討する。
-1リポジトリにしか当てはまらない設定だけをここに書く。
+## Usage
 
-## ここに置かないもの
+### Mouse and trackpad
 
-言語ごとのCIやデプロイは、リポジトリによって中身が違いすぎるので入れていない。
-必要になったら既存のリポジトリからコピーする。
+- Click: move the playhead and select the track under it
+- Drag: scrub
+- Double-click: add a split point
+- Drag a split point: move it
+- Right-click: add or delete a split point
+- Scroll: pan
+- ⌘ or ⌥ + scroll, or pinch: zoom
+- Click or drag in the overview: move the visible range
+
+### Keyboard (when the waveform has focus)
+
+- `Space`: play / pause
+- `M`: split at the playhead
+- `Delete`: remove the split point at the start of the selected track
+
+## Development
+
+The project is a Swift package with two targets.
+
+- `TrackCutCore`: waveform analysis, silence detection, export and tag reading/writing. No UI code
+- `TrackCut`: the SwiftUI / AppKit app
+
+Run the tests with:
+
+```sh
+swift test
+```
+
+With only the Command Line Tools installed (no Xcode), the Swift Testing macro plugin is not found by default. Pass its path explicitly:
+
+```sh
+swift test -Xswiftc -plugin-path -Xswiftc /Library/Developer/CommandLineTools/usr/lib/swift/host/plugins/testing
+```
+
+For the same reason, the app avoids the `@State` macro and keeps view state in `ObservableObject`s, so it builds with either toolchain.

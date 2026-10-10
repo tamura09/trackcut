@@ -1,0 +1,51 @@
+name: Test
+
+on:
+  # No paths filter: Test is a required check, so it has to report on every PR,
+  # or a docs-only PR could never merge.
+  pull_request:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: test-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    name: Test
+    # Not after the merge: a change reaches main through a PR that has already
+    # run this check, so repeating it would bill the same macOS minutes twice.
+    if: ${{ github.event_name == 'pull_request' || github.ref != 'refs/heads/main' }}
+    # macOS 27 with Xcode 27, the same generation the app is developed on. The
+    # image is labelled by its Xcode version rather than macos-27, and is still
+    # a public preview, so expect occasional queueing.
+    #
+    # Uses the image's default Xcode. Pinning one would break the job as soon
+    # as the image drops that version, and Renovate does not track it.
+    runs-on: xcode-27
+    timeout-minutes: 30
+    defaults:
+      run:
+        shell: bash
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+
+      - name: Show toolchain
+        run: |
+          xcodebuild -version
+          swift --version
+
+      - name: Test
+        run: swift test
+
+      # Builds the release binary and the app bundle the README tells users to
+      # run. swift test alone does not build the app target.
+      - name: Build app bundle
+        run: ./build-app.sh
