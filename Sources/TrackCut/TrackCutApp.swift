@@ -6,7 +6,12 @@ struct TrackCutApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
     @ObservedObject private var editor = EditorModel.shared
     @ObservedObject private var sheets = SheetState.shared
+    @ObservedObject private var updater = AppUpdater.shared
     @AppStorage("showsInspector") private var showsInspector = true
+
+    init() {
+        LegacyDefaults.migrate()
+    }
 
     var body: some Scene {
         WindowGroup("TrackCut", id: "main") {
@@ -28,6 +33,10 @@ struct TrackCutApp: App {
     @CommandsBuilder
     private var commands: some Commands {
         let isLoaded = editor.peaks != nil
+        CommandGroup(after: .appInfo) {
+            Button("アップデートを確認…") { updater.checkForUpdates() }
+                .disabled(!updater.canCheckForUpdates)
+        }
         CommandGroup(replacing: .newItem) {
             Button("開く…") { editor.presentOpenPanel() }
                 .keyboardShortcut("o")
