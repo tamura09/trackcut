@@ -4,7 +4,7 @@
 
 A macOS app for splitting a long recording (a live set, a ripped album, a radio show) into one file per track while looking at the waveform. It reads FLAC, M4A and WAV, and writes each track as its own file with tags.
 
-The user interface is in Japanese.
+The user interface is in English and Japanese and follows the system language. To use the other one, choose it in TrackCut > Settings (⌘,) and relaunch the app. The setting is the same one as TrackCut's entry in System Settings > General > Language & Region > Applications.
 
 ## Features
 
@@ -52,7 +52,7 @@ On an Intel Mac, build it from source as described below.
 
 ### Updates
 
-TrackCut checks for a new version once a day, and on demand with TrackCut > アップデートを確認…. It shows the release notes, then downloads, installs and relaunches the new version with [Sparkle](https://sparkle-project.org). Every update is checked against the project's EdDSA signature before it is installed.
+TrackCut checks for a new version once a day, and on demand with TrackCut > Check for Updates…. It shows the release notes, then downloads, installs and relaunches the new version with [Sparkle](https://sparkle-project.org). Every update is checked against the project's EdDSA signature before it is installed.
 
 Version 0.1.0 does not have the updater. Replace it once by hand: download the latest release again, or run `brew upgrade --cask --greedy trackcut`.
 
@@ -76,7 +76,7 @@ During development you can also run it straight from SwiftPM:
 swift run TrackCut
 ```
 
-A binary built this way shows the pre-Liquid Glass design: SwiftPM records the deployment target (macOS 15) as the SDK version, and AppKit picks the design from it. `build-app.sh` passes the SDK to the link step so the bundle gets the current design.
+A binary built this way shows the pre-Liquid Glass design: SwiftPM records the deployment target (macOS 15) as the SDK version, and AppKit picks the design from it. `build-app.sh` passes the SDK to the link step so the bundle gets the current design. It is also English only, since the translations are copied into the app bundle by `build-app.sh`.
 
 ## Usage
 
@@ -143,6 +143,21 @@ swift test -Xswiftc -plugin-path -Xswiftc /Library/Developer/CommandLineTools/us
 For the same reason, the app avoids the `@State` macro and keeps view state in `ObservableObject`s, so it builds with either toolchain.
 
 The app icon is `AppIcon.icon`, an Icon Composer file: open it in Icon Composer (Xcode > Open Developer Tool) to edit it. `build-app.sh` compiles it with `actool` into `Assets.car`, which macOS 26 and later draw with Liquid Glass, and `AppIcon.icns` for macOS 15. `docs/icon.png`, shown at the top of this README, is a render of the built app's icon; update it along with the icon.
+
+### Localization
+
+The strings in the code are the English text, and they double as the keys of the translations in `Localizations/`:
+
+- `ja.lproj/Localizable.strings`: the Japanese translation of every string
+- `en.lproj/Localizable.stringsdict`: the singular forms of the English strings that contain a count
+
+Pass user-facing text to a SwiftUI view as a literal, or wrap it in `String(localized:)` where the API takes a plain `String` (AppKit, error messages, undo action names). Then run:
+
+```sh
+./check-localizations.sh
+```
+
+It lists every localizable string the compiler sees and fails when one has no Japanese translation, or when a table has a key the code no longer uses. CI runs it on every pull request.
 
 ## Releasing
 

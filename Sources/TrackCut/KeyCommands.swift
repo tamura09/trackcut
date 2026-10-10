@@ -42,11 +42,17 @@ enum KeyCommands {
         let title: String
         let commands: [KeyCommand]
         var id: String { title }
+
+        init(title: String.LocalizationValue, commands: [KeyCommand]) {
+            self.title = String(localized: title)
+            self.commands = commands
+        }
     }
 
-    private static func command(_ key: KeyCommand.Key, shift: Bool? = false, _ label: String, _ title: String,
+    private static func command(_ key: KeyCommand.Key, shift: Bool? = false, _ label: String,
+                                _ title: String.LocalizationValue,
                                 _ perform: @escaping @MainActor (EditorModel) -> Void) -> KeyCommand {
-        KeyCommand(key: key, shift: shift, label: label, title: title, perform: perform)
+        KeyCommand(key: key, shift: shift, label: label, title: String(localized: title), perform: perform)
     }
 
     private static func key(_ character: String, fallbackCode: UInt16) -> KeyCommand.Key {
@@ -54,56 +60,56 @@ enum KeyCommands {
     }
 
     static let sections: [Section] = [
-        Section(title: "再生", commands: [
-            command(.code(49), "Space", "再生 / 一時停止") { $0.player.toggle() },
-            command(.code(123), "←", "1 秒戻る") { $0.seek(by: -1) },
-            command(.code(124), "→", "1 秒進む") { $0.seek(by: 1) },
-            command(.code(123), shift: true, "⇧ ←", "10 秒戻る") { $0.seek(by: -10) },
-            command(.code(124), shift: true, "⇧ →", "10 秒進む") { $0.seek(by: 10) },
-            command(.code(126), "↑", "前のトラックへ") { $0.selectAdjacentTrack(-1) },
-            command(.code(125), "↓", "次のトラックへ") { $0.selectAdjacentTrack(1) },
-            command(.code(115), "Home", "先頭へ") { $0.seek(to: 0) },
-            command(.code(119), "End", "末尾へ") { $0.seek(to: $0.duration) },
+        Section(title: "Playback", commands: [
+            command(.code(49), "Space", "Play / pause") { $0.player.toggle() },
+            command(.code(123), "←", "Back 1 second") { $0.seek(by: -1) },
+            command(.code(124), "→", "Forward 1 second") { $0.seek(by: 1) },
+            command(.code(123), shift: true, "⇧ ←", "Back 10 seconds") { $0.seek(by: -10) },
+            command(.code(124), shift: true, "⇧ →", "Forward 10 seconds") { $0.seek(by: 10) },
+            command(.code(126), "↑", "Previous track") { $0.selectAdjacentTrack(-1) },
+            command(.code(125), "↓", "Next track") { $0.selectAdjacentTrack(1) },
+            command(.code(115), "Home", "Go to the start") { $0.seek(to: 0) },
+            command(.code(119), "End", "Go to the end") { $0.seek(to: $0.duration) },
         ]),
-        Section(title: "分割", commands: [
-            command(key("m", fallbackCode: 46), "M", "再生位置で分割") { $0.addSplit(at: $0.player.currentTime) },
-            command(.codes([51, 117]), "⌫", "選択トラックの先頭の分割点を削除") { $0.removeSelectedSplit() },
-            command(.code(43), ",", "分割点を 10 ミリ秒前へ") { $0.nudgeSelectedSplit(by: -0.01) },
-            command(.code(47), ".", "分割点を 10 ミリ秒後ろへ") { $0.nudgeSelectedSplit(by: 0.01) },
-            command(.code(43), shift: true, "⇧ ,", "分割点を 100 ミリ秒前へ") { $0.nudgeSelectedSplit(by: -0.1) },
-            command(.code(47), shift: true, "⇧ .", "分割点を 100 ミリ秒後ろへ") { $0.nudgeSelectedSplit(by: 0.1) },
-            command(key("e", fallbackCode: 14), "E", "選択トラックを書き出す / 書き出さない") { $0.toggleSelectedEnabled() },
+        Section(title: "Splitting", commands: [
+            command(key("m", fallbackCode: 46), "M", "Split at the playhead") { $0.addSplit(at: $0.player.currentTime) },
+            command(.codes([51, 117]), "⌫", "Remove the split point at the start of the selected track") { $0.removeSelectedSplit() },
+            command(.code(43), ",", "Move that split point 10 ms earlier") { $0.nudgeSelectedSplit(by: -0.01) },
+            command(.code(47), ".", "Move that split point 10 ms later") { $0.nudgeSelectedSplit(by: 0.01) },
+            command(.code(43), shift: true, "⇧ ,", "Move that split point 100 ms earlier") { $0.nudgeSelectedSplit(by: -0.1) },
+            command(.code(47), shift: true, "⇧ .", "Move that split point 100 ms later") { $0.nudgeSelectedSplit(by: 0.1) },
+            command(key("e", fallbackCode: 14), "E", "Include / exclude the selected track from the export") { $0.toggleSelectedEnabled() },
         ]),
-        Section(title: "フェード", commands: [
-            command(key("i", fallbackCode: 34), "I", "トラックの先頭から再生位置までフェードイン") { $0.setFade(.start, at: $0.player.currentTime) },
-            command(key("o", fallbackCode: 31), "O", "再生位置からトラックの末尾までフェードアウト") { $0.setFade(.end, at: $0.player.currentTime) },
-            command(key("i", fallbackCode: 34), shift: true, "⇧ I", "フェードインを解除") { editor in
+        Section(title: "Fades", commands: [
+            command(key("i", fallbackCode: 34), "I", "Fade in from the start of the track to the playhead") { $0.setFade(.start, at: $0.player.currentTime) },
+            command(key("o", fallbackCode: 31), "O", "Fade out from the playhead to the end of the track") { $0.setFade(.end, at: $0.player.currentTime) },
+            command(key("i", fallbackCode: 34), shift: true, "⇧ I", "Remove the fade-in") { editor in
                 if let i = editor.trackIndex(containing: editor.player.currentTime) { editor.removeFade(.start, ofTrackAt: i) }
             },
-            command(key("o", fallbackCode: 31), shift: true, "⇧ O", "フェードアウトを解除") { editor in
+            command(key("o", fallbackCode: 31), shift: true, "⇧ O", "Remove the fade-out") { editor in
                 if let i = editor.trackIndex(containing: editor.player.currentTime) { editor.removeFade(.end, ofTrackAt: i) }
             },
         ]),
-        Section(title: "表示", commands: [
-            command(.characters(["=", "+"], fallbackCode: 24), shift: nil, "=", "拡大") { $0.zoom(by: 0.5) },
-            command(key("-", fallbackCode: 27), "-", "縮小") { $0.zoom(by: 2) },
-            command(key("z", fallbackCode: 6), "Z", "選択トラックに合わせて拡大") { $0.zoomToSelectedTrack() },
-            command(key("z", fallbackCode: 6), shift: true, "⇧ Z", "全体を表示") { $0.zoomToFit() },
+        Section(title: "View", commands: [
+            command(.characters(["=", "+"], fallbackCode: 24), shift: nil, "=", "Zoom in") { $0.zoom(by: 0.5) },
+            command(key("-", fallbackCode: 27), "-", "Zoom out") { $0.zoom(by: 2) },
+            command(key("z", fallbackCode: 6), "Z", "Zoom to the selected track") { $0.zoomToSelectedTrack() },
+            command(key("z", fallbackCode: 6), shift: true, "⇧ Z", "Zoom to fit") { $0.zoomToFit() },
         ]),
     ]
 
     /// Shortcuts that live in the menu bar, listed alongside the single-key ones
     static let menuShortcuts: [(label: String, title: String)] = [
-        ("⌘ O", "開く"),
-        ("⌘ E", "書き出し"),
-        ("⇧ ⌘ D", "無音区間で分割"),
-        ("⌘ Z", "取り消す"),
-        ("⇧ ⌘ Z", "やり直す"),
-        ("⌘ =", "拡大"),
-        ("⌘ -", "縮小"),
-        ("⌘ 0", "全体を表示"),
-        ("⌥ ⌘ I", "インスペクタを表示 / 隠す"),
-        ("⌘ /", "キーボードショートカット"),
+        ("⌘ O", String(localized: "Open")),
+        ("⌘ E", String(localized: "Export")),
+        ("⇧ ⌘ D", String(localized: "Split at silences")),
+        ("⌘ Z", String(localized: "Undo")),
+        ("⇧ ⌘ Z", String(localized: "Redo")),
+        ("⌘ =", String(localized: "Zoom in")),
+        ("⌘ -", String(localized: "Zoom out")),
+        ("⌘ 0", String(localized: "Zoom to fit")),
+        ("⌥ ⌘ I", String(localized: "Show / hide the inspector")),
+        ("⌘ /", String(localized: "Keyboard shortcuts")),
     ]
 
     /// Runs the command for `event`. Returns false when the event is not a shortcut here, or when the

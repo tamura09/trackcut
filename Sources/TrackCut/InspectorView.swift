@@ -12,7 +12,7 @@ struct InspectorView: View {
                 FadeSection(editor: editor, edge: .start, index: i)
                 FadeSection(editor: editor, edge: .end, index: i)
                 Section {
-                    Button("このフェードをすべてのトラックに適用") { editor.applyFadesToAllTracks(from: i) }
+                    Button("Apply These Fades to All Tracks") { editor.applyFadesToAllTracks(from: i) }
                         .frame(maxWidth: .infinity)
                 }
             }
@@ -24,15 +24,15 @@ struct InspectorView: View {
     private func trackSection(_ i: Int) -> some View {
         let id = editor.tracks[i].id
         let start = editor.tracks[i].start
-        return Section("トラック \(i + 1)") {
-            TextField("タイトル", text: editor.textBinding(.track(id, \.title)), prompt: Text("Track \(i + 1)"))
-            TextField("アーティスト", text: editor.textBinding(.track(id, \.artist)),
-                      prompt: Text(editor.albumTags.artist.isEmpty ? "アルバムと同じ" : editor.albumTags.artist))
-            Toggle("書き出す", isOn: Binding(get: { editor.index(of: id).map { editor.tracks[$0].isEnabled } ?? false },
+        return Section("Track \(i + 1)") {
+            TextField("Title", text: editor.textBinding(.track(id, \.title)), prompt: Text(verbatim: "Track \(i + 1)"))
+            TextField("Artist", text: editor.textBinding(.track(id, \.artist)),
+                      prompt: Text(editor.albumTags.artist.isEmpty ? String(localized: "Same as album") : editor.albumTags.artist))
+            Toggle("Include in Export", isOn: Binding(get: { editor.index(of: id).map { editor.tracks[$0].isEnabled } ?? false },
                                           set: { editor.setEnabled($0, for: id) }))
-            LabeledContent("開始", value: TimeFormat.string(start))
+            LabeledContent("Start", value: TimeFormat.string(start))
                 .monospacedDigit()
-            LabeledContent("長さ", value: TimeFormat.string(editor.end(ofTrackAt: i) - start))
+            LabeledContent("Length", value: TimeFormat.string(editor.end(ofTrackAt: i) - start))
                 .monospacedDigit()
         }
     }
@@ -60,25 +60,25 @@ private struct FadeSection: View {
                     }
                 }
                 .labelsHidden()
-                TextField("秒", value: Binding(get: { fade.duration }, set: { value in
+                TextField("Seconds", value: Binding(get: { fade.duration }, set: { value in
                     editor.performUndoable(edge.actionName) { editor.setFadeDuration(edge, value, ofTrackAt: index) }
                 }), format: .number.precision(.fractionLength(0...2)))
                 .labelsHidden()
                 .multilineTextAlignment(.trailing)
                 .frame(width: 52)
-                Text("秒").foregroundStyle(.secondary)
+                Text("s").foregroundStyle(.secondary)
             }
-            Picker("カーブ", selection: Binding(get: { fade.curve },
+            Picker("Curve", selection: Binding(get: { fade.curve },
                                               set: { editor.setFadeCurve(edge, $0, ofTrackAt: index) })) {
                 ForEach(FadeCurve.allCases) { curve in
                     Text(curve.displayName).tag(curve)
                 }
             }
         } header: {
-            Text(edge == .start ? "フェードイン" : "フェードアウト")
+            Text(edge.title)
         } footer: {
             if isShortened {
-                Text("トラックより長いため短縮して適用されます")
+                Text("Shortened to fit the track")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
@@ -102,12 +102,12 @@ private struct AlbumSection: View {
     @ObservedObject var editor: EditorModel
 
     var body: some View {
-        Section("アルバム") {
-            TextField("アルバム", text: editor.textBinding(.album(\.album)))
-            TextField("アーティスト", text: editor.textBinding(.album(\.artist)))
-            TextField("アルバムアーティスト", text: editor.textBinding(.album(\.albumArtist)))
-            TextField("年", text: editor.textBinding(.album(\.date)))
-            TextField("ジャンル", text: editor.textBinding(.album(\.genre)))
+        Section("Album") {
+            TextField("Album", text: editor.textBinding(.album(\.album)))
+            TextField("Artist", text: editor.textBinding(.album(\.artist)))
+            TextField("Album Artist", text: editor.textBinding(.album(\.albumArtist)))
+            TextField("Year", text: editor.textBinding(.album(\.date)))
+            TextField("Genre", text: editor.textBinding(.album(\.genre)))
         }
     }
 }

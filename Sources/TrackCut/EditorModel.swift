@@ -63,13 +63,13 @@ final class EditorModel: ObservableObject {
 
     func open(_ url: URL) {
         guard Self.supportedExtensions.contains(url.pathExtension.lowercased()) else {
-            errorMessage = "対応形式は FLAC / M4A / WAV です: \(url.lastPathComponent)"
+            errorMessage = String(localized: "Supported formats are FLAC, M4A and WAV: \(url.lastPathComponent)")
             return
         }
         do {
             try player.load(url)
         } catch {
-            errorMessage = "開けませんでした: \(error.localizedDescription)"
+            errorMessage = String(localized: "Could not open the file: \(error.localizedDescription)")
             return
         }
         // Only cancel the previous analysis once the new file has opened. Cancelling first would
@@ -129,7 +129,7 @@ final class EditorModel: ObservableObject {
         guard loadID == id else { return }
         loadingProgress = nil
         sourceURL = nil
-        errorMessage = "波形を読み込めませんでした: \(error.localizedDescription)"
+        errorMessage = String(localized: "Could not read the waveform: \(error.localizedDescription)")
     }
 
     // MARK: - Undo
@@ -205,9 +205,9 @@ final class EditorModel: ObservableObject {
 
         var actionName: String {
             switch self {
-            case .track(_, \Track.title): "タイトルの変更"
-            case .track: "アーティストの変更"
-            case .album: "アルバム情報の変更"
+            case .track(_, \Track.title): String(localized: "Change Title")
+            case .track: String(localized: "Change Artist")
+            case .album: String(localized: "Change Album Info")
             }
         }
     }
@@ -323,7 +323,7 @@ final class EditorModel: ObservableObject {
               time > Self.minTrackLength, time < duration - Self.minTrackLength,
               !tracks.contains(where: { abs($0.start - time) < Self.minTrackLength })
         else { return }
-        performUndoable("分割") {
+        performUndoable(String(localized: "Split")) {
             var track = Track(start: time)
             let i = tracks.firstIndex { $0.start > time } ?? tracks.endIndex
             // The fade-out stays at the end of the original range, which now belongs to the new track
@@ -339,7 +339,7 @@ final class EditorModel: ObservableObject {
     /// Removes a split point (the track is merged into the previous one, which takes over its fade-out)
     func removeSplit(_ id: Track.ID) {
         guard let i = index(of: id), i > 0 else { return }
-        performUndoable("分割点を削除") {
+        performUndoable(String(localized: "Delete Split Point")) {
             tracks[i - 1].fadeOut = tracks[i].fadeOut
             tracks.remove(at: i)
             selectedTrackID = tracks[i - 1].id
@@ -361,14 +361,14 @@ final class EditorModel: ObservableObject {
     /// Moves the split point at the start of the selected track by `seconds`
     func nudgeSelectedSplit(by seconds: Double) {
         guard let i = selectedIndex, i > 0 else { return }
-        performUndoable("分割点を移動") {
+        performUndoable(String(localized: "Move Split Point")) {
             moveSplit(tracks[i].id, to: tracks[i].start + seconds)
         }
     }
 
     /// Replaces all split points. See replacingSplits(with:tolerance:) for what is carried over.
     func applySplits(_ times: [Double]) {
-        performUndoable("無音区間で分割") {
+        performUndoable(String(localized: "Split at Silences")) {
             tracks = tracks.replacingSplits(with: times, tolerance: Self.minTrackLength)
             selectedTrackID = tracks.first?.id
         }
@@ -376,7 +376,7 @@ final class EditorModel: ObservableObject {
 
     func setEnabled(_ isEnabled: Bool, for id: Track.ID) {
         guard let i = index(of: id), tracks[i].isEnabled != isEnabled else { return }
-        performUndoable(isEnabled ? "書き出しに含める" : "書き出しから外す") {
+        performUndoable(isEnabled ? String(localized: "Include in Export") : String(localized: "Exclude from Export")) {
             tracks[i].isEnabled = isEnabled
         }
     }
@@ -403,7 +403,7 @@ final class EditorModel: ObservableObject {
     }
 
     func setFadeCurve(_ edge: FadeEdge, _ curve: FadeCurve, ofTrackAt i: Int) {
-        performUndoable(edge.actionName + "のカーブ") {
+        performUndoable(edge.curveActionName) {
             switch edge {
             case .start: tracks[i].fadeIn.curve = curve
             case .end: tracks[i].fadeOut.curve = curve
@@ -422,7 +422,7 @@ final class EditorModel: ObservableObject {
     }
 
     func removeFade(_ edge: FadeEdge, ofTrackAt i: Int) {
-        performUndoable(edge.actionName + "を解除") {
+        performUndoable(edge.removeActionName) {
             setFadeDuration(edge, 0, ofTrackAt: i)
         }
     }
@@ -431,7 +431,7 @@ final class EditorModel: ObservableObject {
     /// FadeEnvelope shortens both fades in proportion, so neither is lost.
     func applyFadesToAllTracks(from i: Int) {
         let fadeIn = tracks[i].fadeIn, fadeOut = tracks[i].fadeOut
-        performUndoable("フェードをすべてのトラックに適用") {
+        performUndoable(String(localized: "Apply Fades to All Tracks")) {
             for j in tracks.indices {
                 tracks[j].fadeIn = fadeIn
                 tracks[j].fadeOut = fadeOut
@@ -531,5 +531,13 @@ final class EditorModel: ObservableObject {
 }
 
 extension FadeEdge {
-    var actionName: String { self == .start ? "フェードイン" : "フェードアウト" }
+    /// Header of the fade's inspector section
+    var title: String { self == .start ? String(localized: "Fade-In") : String(localized: "Fade-Out") }
+    var actionName: String { self == .start ? String(localized: "Fade In") : String(localized: "Fade Out") }
+    var curveActionName: String {
+        self == .start ? String(localized: "Change Fade-In Curve") : String(localized: "Change Fade-Out Curve")
+    }
+    var removeActionName: String {
+        self == .start ? String(localized: "Remove Fade-In") : String(localized: "Remove Fade-Out")
+    }
 }

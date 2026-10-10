@@ -58,7 +58,7 @@ public enum TagError: LocalizedError {
 
     public var errorDescription: String? {
         switch self {
-        case .invalidFile(let detail): "タグを書き込めませんでした: \(detail)"
+        case .invalidFile(let detail): String(localized: "Could not write the tags: \(detail)")
         }
     }
 }
@@ -86,7 +86,7 @@ private extension Data {
 private func replaceFile(_ url: URL, writing body: (FileHandle) throws -> Void) throws {
     let temp = url.deletingLastPathComponent().appendingPathComponent(".\(UUID().uuidString).tmp")
     guard FileManager.default.createFile(atPath: temp.path, contents: nil) else {
-        throw TagError.invalidFile("一時ファイルを作成できません")
+        throw TagError.invalidFile(String(localized: "Cannot create a temporary file"))
     }
     do {
         let handle = try FileHandle(forWritingTo: temp)
@@ -143,7 +143,7 @@ enum FLACTags {
         for (i, block) in newBlocks.enumerated() {
             let isLast = i == newBlocks.count - 1
             let length = block.body.count
-            guard length < 1 << 24 else { throw TagError.invalidFile("メタデータが大きすぎます") }
+            guard length < 1 << 24 else { throw TagError.invalidFile(String(localized: "The metadata is too large")) }
             header.append(block.type | (isLast ? 0x80 : 0))
             header.append(contentsOf: [UInt8(length >> 16 & 0xFF), UInt8(length >> 8 & 0xFF), UInt8(length & 0xFF)])
             header.append(block.body)
@@ -203,17 +203,17 @@ enum FLACTags {
             offset = 10 + size
         }
         guard data.count >= offset + 4, data.ascii(at: offset, count: 4) == "fLaC" else {
-            throw TagError.invalidFile("FLAC ファイルではありません")
+            throw TagError.invalidFile(String(localized: "Not a FLAC file"))
         }
         offset += 4
 
         var blocks: [Block] = []
         while true {
-            guard offset + 4 <= data.count else { throw TagError.invalidFile("FLAC メタデータが壊れています") }
+            guard offset + 4 <= data.count else { throw TagError.invalidFile(String(localized: "The FLAC metadata is corrupt")) }
             let s = data.startIndex + offset
             let head = data[s]
             let length = Int(data[s + 1]) << 16 | Int(data[s + 2]) << 8 | Int(data[s + 3])
-            guard offset + 4 + length <= data.count else { throw TagError.invalidFile("FLAC メタデータが壊れています") }
+            guard offset + 4 + length <= data.count else { throw TagError.invalidFile(String(localized: "The FLAC metadata is corrupt")) }
             blocks.append(Block(type: head & 0x7F, body: Data(data[(s + 4)..<(s + 4 + length)])))
             offset += 4 + length
             if head & 0x80 != 0 { break }
@@ -258,14 +258,14 @@ enum WAVTags {
               header.ascii(at: 0, count: 4) == "RIFF", header.ascii(at: 8, count: 4) == "WAVE"
         else {
             // RF64 (over 4 GB) and other variants are not supported
-            throw TagError.invalidFile("RIFF/WAVE 形式ではありません")
+            throw TagError.invalidFile(String(localized: "Not a RIFF/WAVE file"))
         }
         var end = Int(try handle.seekToEnd())
         if end % 2 == 1 {
             try handle.write(contentsOf: Data([0]))
             end += 1
         }
-        guard end + chunk.count - 8 <= Int(UInt32.max) else { throw TagError.invalidFile("ファイルが大きすぎます") }
+        guard end + chunk.count - 8 <= Int(UInt32.max) else { throw TagError.invalidFile(String(localized: "The file is too large")) }
         try handle.write(contentsOf: chunk)
         try handle.seek(toOffset: 4)
         var size = Data()

@@ -38,7 +38,7 @@ struct ContentView: View {
             }
             return true
         }
-        .alert("エラー", isPresented: Binding(get: { editor.errorMessage != nil },
+        .alert("Error", isPresented: Binding(get: { editor.errorMessage != nil },
                                              set: { if !$0 { editor.errorMessage = nil } })) {
             Button("OK") {}
         } message: {
@@ -54,35 +54,35 @@ struct ContentView: View {
         let exported = editor.tracks.filter(\.isEnabled).count
         let total = TimeFormat.string(editor.duration, fractionDigits: 0)
         return exported == editor.tracks.count
-            ? "\(editor.tracks.count) トラック · \(total)"
-            : "\(editor.tracks.count) トラック（書き出し \(exported)）· \(total)"
+            ? String(localized: "\(editor.tracks.count) tracks · \(total)")
+            : String(localized: "\(editor.tracks.count) tracks (\(exported) exported) · \(total)")
     }
 
     @ToolbarContentBuilder
     private var toolbar: some ToolbarContent {
         ToolbarItem(placement: .navigation) {
-            Button { editor.presentOpenPanel() } label: { Label("開く", systemImage: "folder") }
-                .help("開く (⌘O)")
+            Button { editor.presentOpenPanel() } label: { Label("Open", systemImage: "folder") }
+                .help("Open (⌘O)")
         }
         ToolbarItem(placement: .primaryAction) {
             Button { sheets.showsSilence = true } label: {
-                Label("無音検出", systemImage: "waveform.badge.magnifyingglass")
+                Label("Detect Silence", systemImage: "waveform.badge.magnifyingglass")
             }
-            .help("無音区間から分割点を自動検出 (⇧⌘D)")
+            .help("Detect split points from silent gaps (⇧⌘D)")
             .disabled(!isLoaded)
         }
         ToolbarItem(placement: .primaryAction) {
             Button { sheets.showsExport = true } label: {
-                Label("書き出し", systemImage: "square.and.arrow.up")
+                Label("Export", systemImage: "square.and.arrow.up")
             }
-            .help("曲ごとに書き出し (⌘E)")
+            .help("Export each track to its own file (⌘E)")
             .disabled(!isLoaded)
         }
         ToolbarItem(placement: .primaryAction) {
             Button { showsInspector.toggle() } label: {
-                Label("インスペクタ", systemImage: "sidebar.trailing")
+                Label("Inspector", systemImage: "sidebar.trailing")
             }
-            .help("インスペクタを表示 / 隠す (⌥⌘I)")
+            .help("Show / hide the inspector (⌥⌘I)")
             .disabled(!isLoaded)
         }
     }
@@ -133,13 +133,13 @@ private struct EmptyStateView: View {
                 .frame(width: 104, height: 104)
                 .glassSurface(in: RoundedRectangle(cornerRadius: 30, style: .continuous))
             VStack(spacing: 6) {
-                Text("ファイルをドロップして開始")
+                Text("Drop a File to Get Started")
                     .font(.title2.weight(.semibold))
-                Text("FLAC / M4A / WAV に対応しています")
+                Text("Supports FLAC, M4A and WAV")
                     .foregroundStyle(.secondary)
             }
             Button(action: open) {
-                Label("開く…", systemImage: "folder")
+                Label("Open…", systemImage: "folder")
                     .padding(.horizontal, 6)
             }
             .controlSize(.large)
@@ -165,7 +165,7 @@ private struct LoadingView: View {
 
     var body: some View {
         VStack(spacing: 14) {
-            Text("波形を解析中…").font(.headline)
+            Text("Analyzing Waveform…").font(.headline)
             ProgressView(value: progress).frame(width: 260)
             Text(fileName).font(.callout).foregroundStyle(.secondary).lineLimit(1).truncationMode(.middle)
         }

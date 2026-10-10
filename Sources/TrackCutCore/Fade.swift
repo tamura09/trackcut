@@ -8,10 +8,10 @@ public enum FadeCurve: String, CaseIterable, Identifiable, Sendable {
 
     public var displayName: String {
         switch self {
-        case .linear: "リニア"
-        case .equalPower: "等パワー"
-        case .sCurve: "S カーブ"
-        case .exponential: "エクスポネンシャル"
+        case .linear: String(localized: "Linear")
+        case .equalPower: String(localized: "Equal Power")
+        case .sCurve: String(localized: "S-Curve")
+        case .exponential: String(localized: "Exponential")
         }
     }
 

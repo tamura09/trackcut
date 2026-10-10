@@ -110,11 +110,13 @@ public enum AudioError: LocalizedError {
 
     public var errorDescription: String? {
         switch self {
-        case .bufferAllocationFailed: "オーディオバッファを確保できませんでした。"
-        case .unsupportedFormat: "このオーディオ形式には対応していません。"
-        case .unsupportedSampleRateForAAC(let rate): "AAC は \(Int(rate)) Hz に対応していません（48 kHz 以下のみ）。"
-        case .exportSessionUnavailable: "書き出しセッションを作成できませんでした。"
-        case .outputIsSource(let name): "書き出し先「\(name)」が元のファイルと同じです。別のフォルダを選んでください。"
+        case .bufferAllocationFailed: String(localized: "Could not allocate an audio buffer.")
+        case .unsupportedFormat: String(localized: "This audio format is not supported.")
+        case .unsupportedSampleRateForAAC(let rate):
+            String(localized: "AAC does not support \(Int(rate)) Hz. The sample rate must be 48 kHz or lower.")
+        case .exportSessionUnavailable: String(localized: "Could not create an export session.")
+        case .outputIsSource(let name):
+            String(localized: "The export would overwrite the source file “\(name)”. Choose another folder.")
         }
     }
 }

@@ -86,7 +86,7 @@ extension AppTests {
             #expect(close(editor.player.currentTime, 3))
             #expect(editor.selectedTrackID == editor.tracks[0].id)
             // Clicking registers no undo step: the last one is still the split
-            #expect(undo.undoActionName == "分割")
+            #expect(undo.undoActionName == "Split")
         }
     }
 }

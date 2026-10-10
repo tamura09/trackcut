@@ -7,14 +7,14 @@ struct TrackListView: View {
     var body: some View {
         VStack(spacing: 0) {
             HStack(spacing: 8) {
-                Text("書出").frame(width: 30)
+                Text("Export").frame(width: 44)
                 Text("#").frame(width: 24, alignment: .trailing)
-                Text("タイトル")
+                Text("Title")
                 Spacer()
-                Text("アーティスト").frame(width: 180, alignment: .leading)
-                Text("フェード").frame(width: 92, alignment: .center)
-                Text("開始").frame(width: 84, alignment: .trailing)
-                Text("長さ").frame(width: 76, alignment: .trailing)
+                Text("Artist").frame(width: 180, alignment: .leading)
+                Text("Fades").frame(width: 92, alignment: .center)
+                Text("Start").frame(width: 84, alignment: .trailing)
+                Text("Length").frame(width: 76, alignment: .trailing)
             }
             .font(.caption.weight(.medium))
             .foregroundStyle(.secondary)
@@ -31,15 +31,16 @@ struct TrackListView: View {
                             Toggle("", isOn: Binding(get: { track.isEnabled },
                                                      set: { editor.setEnabled($0, for: track.id) }))
                                 .labelsHidden()
-                                .help("書き出す (E)")
-                                .frame(width: 30)
+                                .help("Include in export (E)")
+                                .frame(width: 44)
                             Text(String(format: "%02d", i + 1))
                                 .monospacedDigit()
                                 .foregroundStyle(.secondary)
                                 .frame(width: 24, alignment: .trailing)
-                            TextField("Track \(i + 1)", text: editor.textBinding(.track(track.id, \.title)))
+                            // Not localized: it shows the name the track is exported under
+                            TextField(String("Track \(i + 1)"), text: editor.textBinding(.track(track.id, \.title)))
                                 .textFieldStyle(.plain)
-                            TextField(editor.albumTags.artist.isEmpty ? "アーティスト" : editor.albumTags.artist,
+                            TextField(editor.albumTags.artist.isEmpty ? String(localized: "Artist") : editor.albumTags.artist,
                                       text: editor.textBinding(.track(track.id, \.artist)))
                                 .textFieldStyle(.plain)
                                 .frame(width: 180)
