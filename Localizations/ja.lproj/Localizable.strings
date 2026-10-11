@@ -133,9 +133,6 @@
 "System Default" = "システム設定に従う";
 "TrackCut switches to the new language when it relaunches." = "新しい言語は TrackCut の再起動後に反映されます。";
 "Relaunch Now" = "今すぐ再起動";
-"Relaunch TrackCut now?" = "TrackCut を今すぐ再起動しますか？";
-"The open file is closed, and its split points are not kept." = "開いているファイルは閉じられ、分割点は保持されません。";
-"Relaunch" = "再起動";
 
 /* Undo action names */
 "Change Title" = "タイトルの変更";

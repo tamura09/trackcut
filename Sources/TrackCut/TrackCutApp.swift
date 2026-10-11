@@ -127,7 +127,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// window quits the app) and the user cancels, the window opens again with the work still in it.
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
         MainActor.assumeIsolated {
-            if EditorModel.shared.confirmDiscardingChanges() { return .terminateNow }
+            if EditorModel.shared.confirmQuitting() { return .terminateNow }
             if EditorModel.shared.window?.isVisible != true { SheetState.shared.reopenWindow?() }
             return .terminateCancel
         }

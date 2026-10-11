@@ -338,6 +338,15 @@ extension AppTests {
             #expect(abs(player.currentTime - 5) < 0.01)
         }
 
+        /// PR #9 review: a relaunch asks about unsaved changes itself, so quitting for it must not ask again
+        @Test func quittingForARelaunchDoesNotAskAgain() async throws {
+            let (editor, undo) = try await loadedEditor()
+            step(undo) { editor.addSplit(at: 5) }
+            #expect(editor.hasUnsavedChanges)
+            editor.quitsWithoutAsking = true
+            #expect(editor.confirmQuitting())
+        }
+
         @Test func aWindowShowsUnsavedChangesWhenItIsSet() async throws {
             let (editor, undo) = try await loadedEditor()
             step(undo) { editor.addSplit(at: 5) }
@@ -362,6 +371,9 @@ extension AppTests {
             #expect(titles(["7 Rings.wav", "2001 A Space Odyssey.flac"]) == ["7 Rings", "2001 A Space Odyssey"])
             // unless every file has one and they count up
             #expect(titles(["1 One.wav", "2 Two.wav", "3 Three.wav"]) == ["One", "Two", "Three"])
+            // PR #9 review: numbers too large to count up from crashed the check
+            #expect(titles(["9223372036854775807 A.wav", "9223372036854775807 B.wav"])
+                    == ["9223372036854775807 A", "9223372036854775807 B"])
         }
 
         @Test func undoingBackToTheSavedStateClearsUnsavedChanges() async throws {

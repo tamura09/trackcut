@@ -461,7 +461,7 @@ final class EditorModel: ObservableObject {
             return Parsed(number: number, title: String(match.4), isMarked: isMarked)
         }
         let numbers = parsed.compactMap { $0?.number }
-        let counted = names.count > 1 && numbers.count == names.count && zip(numbers, numbers.dropFirst()).allSatisfy { $1 == $0 + 1 }
+        let counted = names.count > 1 && numbers.count == names.count && zip(numbers, numbers.dropFirst()).allSatisfy { $0 < Int.max && $1 == $0 + 1 }
         return zip(names, parsed).map { name, parsed in
             guard let parsed, parsed.isMarked || counted else { return name }
             return parsed.title
@@ -564,6 +564,14 @@ final class EditorModel: ObservableObject {
         projectURL = url
         savedState = editState
         return true
+    }
+
+    /// Set when the user has already been asked about unsaved changes for this quit (see relaunch)
+    var quitsWithoutAsking = false
+
+    /// Whether the app may quit: asks about unsaved changes, unless that has been done already
+    func confirmQuitting() -> Bool {
+        quitsWithoutAsking || confirmDiscardingChanges()
     }
 
     /// Asks whether to save unsaved changes before they would be lost. Returns false if the user cancels
