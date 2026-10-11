@@ -1006,3 +1006,27 @@ private func writeMonoWAV(in dir: URL, name: String, bits: Int, isFloat: Bool,
     #expect(abs(values[right] + 0.25) < 0.001)
     #expect(values.indices.filter { $0 != left && $0 != right }.allSatisfy { values[$0] == 0 })
 }
+
+/// PR #9 review: channels with the same label (here all "unknown") were all mapped to the first one, even
+/// for a file read in its own format
+@Test func channelsWithoutTellingLabelsAreMatchedInOrder() {
+    func format(channels: Int, label: AudioChannelLabel) -> AVAudioFormat {
+        let offset = MemoryLayout<AudioChannelLayout>.offset(of: \.mChannelDescriptions)!
+        let size = offset + channels * MemoryLayout<AudioChannelDescription>.stride
+        let raw = UnsafeMutableRawPointer.allocate(byteCount: size, alignment: MemoryLayout<AudioChannelLayout>.alignment)
+        defer { raw.deallocate() }
+        raw.initializeMemory(as: UInt8.self, repeating: 0, count: size)
+        let layout = raw.assumingMemoryBound(to: AudioChannelLayout.self)
+        layout.pointee.mChannelLayoutTag = kAudioChannelLayoutTag_UseChannelDescriptions
+        layout.pointee.mNumberChannelDescriptions = UInt32(channels)
+        let descriptions = (raw + offset).assumingMemoryBound(to: AudioChannelDescription.self)
+        for i in 0..<channels { descriptions[i].mChannelLabel = label }
+        return AVAudioFormat(standardFormatWithSampleRate: 48_000, channelLayout: AVAudioChannelLayout(layout: layout))
+    }
+    let unknown4 = format(channels: 4, label: kAudioChannelLabel_Unknown)
+    #expect(SourceReader.channelMap(from: unknown4, to: unknown4) == [0, 1, 2, 3])
+    let stereo = AVAudioFormat(standardFormatWithSampleRate: 48_000, channels: 2)!
+    #expect(SourceReader.channelMap(from: stereo, to: unknown4) == [0, 1, nil, nil])
+    #expect(SourceReader.channelMap(from: format(channels: 2, label: kAudioChannelLabel_Unused), to: unknown4)
+            == [0, 1, nil, nil])
+}

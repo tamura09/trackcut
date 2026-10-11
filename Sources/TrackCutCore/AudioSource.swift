@@ -248,21 +248,26 @@ final class SourceReader {
     /// For each channel of `target`, the channel of `source` that goes into it, or nil for silence. Channels
     /// are matched by their place in the layouts (a 5.1 file may put the centre first), so a stereo file's
     /// left channel lands on the left speaker. A mono file goes to the left and right speakers, or to every
-    /// channel when the target has neither. Channels without a layout are matched in order.
+    /// channel when the target has neither. Channels whose labels do not tell them apart (none, unknown,
+    /// unused, or the same label twice) are matched in order, and a format onto its own layout is unchanged.
     static func channelMap(from source: AVAudioFormat, to target: AVAudioFormat) -> [Int?] {
         let sourceLabels = labels(of: source), targetLabels = labels(of: target)
         let sourceCount = Int(source.channelCount)
+        let inOrder = targetLabels.indices.map { $0 < sourceCount ? $0 : nil }
+        if sourceLabels == targetLabels { return inOrder }
         if sourceCount == 1 {
             let speakers: Set<AudioChannelLabel> = [kAudioChannelLabel_Left, kAudioChannelLabel_Right]
             let hasSpeakers = targetLabels.contains { speakers.contains($0) }
             return targetLabels.map { !hasSpeakers || speakers.contains($0) ? 0 : nil }
         }
+        let vague: Set<AudioChannelLabel> = [kAudioChannelLabel_Unknown, kAudioChannelLabel_Unused]
+        func telling(_ labels: [AudioChannelLabel]) -> Bool {
+            Set(labels).count == labels.count && !labels.contains(where: vague.contains)
+        }
+        guard telling(sourceLabels), telling(targetLabels) else { return inOrder }
         let byLabel = targetLabels.map { label in sourceLabels.firstIndex(of: label) }
         // Layouts that share no labels (e.g. discrete channels) are matched in order
-        if byLabel.allSatisfy({ $0 == nil }) {
-            return targetLabels.indices.map { $0 < sourceCount ? $0 : nil }
-        }
-        return byLabel
+        return byLabel.allSatisfy({ $0 == nil }) ? inOrder : byLabel
     }
 
     /// The label of each channel of `format`. Mono and stereo formats without a layout are taken as mono
