@@ -51,6 +51,9 @@ extension Array where Element == Track {
     /// few milliseconds) is dropped and the track after it takes over its start; one too close to the end
     /// is dropped and the track before it runs to the end.
     public func fitted(to duration: Double, minLength: Double) -> [Track] {
+        // The editor lets a split point sit exactly `minLength` from its neighbours, and the lengths worked out
+        // from such starts can come out a hair below it (0.5 - 0.4 < 0.1). Those are long enough.
+        let shortest = minLength - 1e-9
         var result: [Track] = []
         var ids = Set<Track.ID>()
         // Starts outside the source (a hand-edited project) are moved into it first
@@ -65,13 +68,13 @@ extension Array where Element == Track {
                               fadeIn: track.fadeIn, fadeOut: track.fadeOut)
                 ids.insert(track.id)
             }
-            if let last = result.last, track.start - last.start < minLength {
+            if let last = result.last, track.start - last.start < shortest {
                 track.start = last.start
                 result.removeLast()
             }
             result.append(track)
         }
-        while result.count > 1, result[result.count - 1].start > duration - minLength {
+        while result.count > 1, duration - result[result.count - 1].start < shortest {
             let last = result.removeLast()
             result[result.count - 1].fadeOut = last.fadeOut
         }

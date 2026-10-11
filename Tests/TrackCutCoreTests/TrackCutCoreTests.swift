@@ -1030,3 +1030,10 @@ private func writeMonoWAV(in dir: URL, name: String, bits: Int, isFloat: Bool,
     #expect(SourceReader.channelMap(from: format(channels: 2, label: kAudioChannelLabel_Unused), to: unknown4)
             == [0, 1, nil, nil])
 }
+
+/// PR #9 review: tracks exactly the minimum length apart came out a hair shorter in floating point and were
+/// dropped when a project was opened
+@Test func tracksExactlyTheMinimumLengthApartAreKept() {
+    let tracks = [Track(start: 0, title: "A"), Track(start: 0.4, title: "B"), Track(start: 0.5, title: "C")]
+    #expect(tracks.fitted(to: 0.6, minLength: 0.1).map(\.title) == ["A", "B", "C"])
+}
