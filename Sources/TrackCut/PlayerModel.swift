@@ -12,7 +12,12 @@ final class PlayerModel: ObservableObject {
     /// Called when the loaded source cannot be played
     var onLoadError: ((Error) -> Void)?
 
+    /// Silences the player, for tests
+    var isMuted = false
+
     private var player: AVPlayer?
+    /// Set when play() is asked for while the player is still being prepared; it starts once ready
+    private var playsWhenReady = false
     private var timer: Timer?
     /// Identifies the latest load(), so a slower earlier one does not replace it
     private var loadID = UUID()
@@ -33,6 +38,7 @@ final class PlayerModel: ObservableObject {
                 guard loadID == id else { return }
                 let player = AVPlayer(playerItem: item)
                 player.actionAtItemEnd = .pause
+                player.isMuted = isMuted
                 // A seek made before the item is ready to play can be dropped, which would leave the player at 0
                 // while the playhead shows another time. So the player is used only once it is ready.
                 await Self.waitUntilLoaded(item)
@@ -40,8 +46,10 @@ final class PlayerModel: ObservableObject {
                 if item.status == .failed { throw item.error ?? AudioError.unsupportedFormat }
                 self.player = player
                 seek(to: currentTime)
+                if playsWhenReady { play() }
             } catch {
                 guard loadID == id else { return }
+                if playsWhenReady { stop() }
                 onLoadError?(error)
             }
         }
@@ -90,8 +98,16 @@ final class PlayerModel: ObservableObject {
         return AVPlayerItem(asset: composition)
     }
 
+    /// Plays from the playhead. While the player is being prepared (after loading or rearranging files), the
+    /// request is kept and playback starts once it is ready; isPlaying is already true meanwhile, so the
+    /// transport shows it and a second press cancels it.
     func play() {
-        guard let player else { return }
+        guard let player else {
+            playsWhenReady = true
+            isPlaying = true
+            return
+        }
+        playsWhenReady = false
         if currentTime >= duration { seek(to: 0) }
         player.play()
         isPlaying = true
@@ -99,6 +115,7 @@ final class PlayerModel: ObservableObject {
     }
 
     func pause() {
+        playsWhenReady = false
         player?.pause()
         isPlaying = false
         stopTimer()
@@ -110,6 +127,7 @@ final class PlayerModel: ObservableObject {
     }
 
     func stop() {
+        playsWhenReady = false
         player?.pause()
         isPlaying = false
         stopTimer()

@@ -191,7 +191,9 @@ final class SourceReader {
         try pad(range.count - delivered, buffer: buffer, body)
     }
 
-    /// Reads a file whose sample rate or channel count differs, converting it to the processing format
+    /// Reads a file at another sample rate than the timeline, converting it (and its channels) to the
+    /// processing format through Float32. Files that differ only in their channels are read by readDirectly,
+    /// which keeps every bit.
     private func readConverted(_ file: AudioSource.File, _ range: Range<AVAudioFramePosition>,
                                buffer: AVAudioPCMBuffer, _ body: (AVAudioPCMBuffer) throws -> Void) throws {
         let input = try AVAudioFile(forReading: file.url, commonFormat: .pcmFormatFloat32, interleaved: false)

@@ -347,6 +347,32 @@ extension AppTests {
             #expect(editor.confirmQuitting())
         }
 
+        /// PR #9 review: play() while the player was being prepared was dropped
+        @Test func playingWhileThePlayerIsPreparedStartsOnceReady() async throws {
+            let (editor, _) = try await loadedEditor()
+            let player = editor.player
+            player.isMuted = true
+            player.load(editor.source!)
+            player.play()
+            #expect(player.isPlaying)
+            #expect(!player.isReady)
+            let deadline = Date().addingTimeInterval(10)
+            while !player.isReady, Date() < deadline { try await Task.sleep(for: .milliseconds(10)) }
+            try await Task.sleep(for: .milliseconds(300))
+            #expect(player.isPlaying)
+            #expect(player.currentTime > 0)
+            player.pause()
+
+            // A second press while it is being prepared cancels the request
+            player.load(editor.source!)
+            player.toggle()
+            player.toggle()
+            while !player.isReady, Date() < deadline { try await Task.sleep(for: .milliseconds(10)) }
+            try await Task.sleep(for: .milliseconds(100))
+            #expect(!player.isPlaying)
+            #expect(player.currentTime == 0)
+        }
+
         @Test func aWindowShowsUnsavedChangesWhenItIsSet() async throws {
             let (editor, undo) = try await loadedEditor()
             step(undo) { editor.addSplit(at: 5) }
