@@ -118,7 +118,7 @@ public struct SourceAudioInfo: Sendable, Equatable {
         channelCount = Int(file.fileFormat.channelCount)
         duration = Double(file.length) / file.fileFormat.sampleRate
         bitRate = Self.readBitRate(url)
-        fileSize = (try? url.resourceValues(forKeys: [.fileSizeKey]).fileSize).flatMap { $0.map(Int64.init) }
+        fileSize = (try? url.resourceValues(forKeys: [.fileSizeKey]))?.fileSize.map(Int64.init)
         hasLosslessAudio = [kAudioFormatLinearPCM, kAudioFormatFLAC, kAudioFormatAppleLossless].contains(asbd.mFormatID)
 
         switch asbd.mFormatID {

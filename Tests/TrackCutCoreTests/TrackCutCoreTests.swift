@@ -951,3 +951,58 @@ private func writeMonoWAV(in dir: URL, name: String, bits: Int, isFloat: Bool,
     #expect(left == expected)
     #expect(right == expected)
 }
+
+/// PR #9 review: a stereo file at the rate of a 5.1 file whose layout starts with the centre had its
+/// channels copied by number, putting left into the centre
+@Test func stereoChannelsGoToTheSurroundLayoutsLeftAndRight() throws {
+    let dir = try makeTempDir()
+    // 0.1 s of 48 kHz stereo, left 0.25 and right -0.25
+    let stereo = dir.appendingPathComponent("stereo.wav")
+    do {
+        let settings: [String: Any] = [
+            AVFormatIDKey: kAudioFormatLinearPCM, AVSampleRateKey: 48_000.0, AVNumberOfChannelsKey: 2,
+            AVLinearPCMBitDepthKey: 16, AVLinearPCMIsFloatKey: false, AVLinearPCMIsBigEndianKey: false,
+        ]
+        let file = try AVAudioFile(forWriting: stereo, settings: settings, commonFormat: .pcmFormatFloat32, interleaved: false)
+        let buffer = AVAudioPCMBuffer(pcmFormat: file.processingFormat, frameCapacity: 4_800)!
+        buffer.frameLength = 4_800
+        for i in 0..<4_800 {
+            buffer.floatChannelData![0][i] = 0.25
+            buffer.floatChannelData![1][i] = -0.25
+        }
+        try file.write(from: buffer)
+    }
+    // 0.1 s of 48 kHz 5.1 ALAC in C L R Ls Rs LFE order
+    let surround = dir.appendingPathComponent("surround.m4a")
+    do {
+        let layout = AVAudioChannelLayout(layoutTag: kAudioChannelLayoutTag_MPEG_5_1_D)!
+        let settings: [String: Any] = [
+            AVFormatIDKey: kAudioFormatAppleLossless, AVSampleRateKey: 48_000.0, AVNumberOfChannelsKey: 6,
+            AVEncoderBitDepthHintKey: 16,
+            AVChannelLayoutKey: Data(bytes: layout.layout, count: MemoryLayout<AudioChannelLayout>.size),
+        ]
+        let format = AVAudioFormat(standardFormatWithSampleRate: 48_000, channelLayout: layout)
+        let file = try AVAudioFile(forWriting: surround, settings: settings, commonFormat: .pcmFormatFloat32,
+                                   interleaved: false)
+        let buffer = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: 4_800)!
+        buffer.frameLength = 4_800
+        try file.write(from: buffer)
+    }
+
+    let source = try AudioSource(urls: [stereo, surround])
+    let reader = try SourceReader(source: source, commonFormat: .pcmFormatFloat32)
+    let target = reader.processingFormat
+    let map = SourceReader.channelMap(from: AVAudioFormat(standardFormatWithSampleRate: 48_000, channels: 2)!, to: target)
+    // The target's left and right channels take the stereo file's, wherever they are in the layout
+    let left = try #require(map.firstIndex { $0 == 0 }), right = try #require(map.firstIndex { $0 == 1 })
+    // The ALAC file keeps the centre first, so left and right are the second and third channels
+    #expect(target.channelLayout?.layoutTag == kAudioChannelLayoutTag_MPEG_5_1_D)
+    #expect(left == 1 && right == 2)
+    var values: [Float] = Array(repeating: 0, count: 6)
+    try reader.read(0..<4_800) { buffer in
+        for ch in 0..<6 { values[ch] = buffer.floatChannelData![ch][100] }
+    }
+    #expect(abs(values[left] - 0.25) < 0.001)
+    #expect(abs(values[right] + 0.25) < 0.001)
+    #expect(values.indices.filter { $0 != left && $0 != right }.allSatisfy { values[$0] == 0 })
+}

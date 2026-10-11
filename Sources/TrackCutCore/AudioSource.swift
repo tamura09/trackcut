@@ -19,7 +19,8 @@ public struct AudioSource: Sendable, Equatable {
     public let files: [File]
     /// Sample rate of the timeline: the highest of the files, so none of them loses detail
     public let sampleRate: Double
-    /// Channel count of the timeline: the highest of the files. Mono files are copied to every channel.
+    /// Channel count of the timeline: the highest of the files. Other files' channels are placed by their
+    /// layout, and a mono file plays on the left and right channels (see SourceReader.channelMap).
     public let channelCount: Int
 
     public init(url: URL) throws {
@@ -163,7 +164,8 @@ final class SourceReader {
                                     commonFormat: widensIntegers ? .pcmFormatInt32 : processingFormat.commonFormat,
                                     interleaved: false)
         // Read into a buffer of the file's own format when its samples or channels have to be mapped
-        let mapped = widensIntegers || input.processingFormat.channelCount != processingFormat.channelCount
+        let channelMap = Self.channelMap(from: input.processingFormat, to: processingFormat)
+        let mapped = widensIntegers || channelMap != Array(0..<Int(processingFormat.channelCount))
         let fileBuffer = mapped ? AVAudioPCMBuffer(pcmFormat: input.processingFormat, frameCapacity: buffer.frameCapacity) : nil
         if mapped, fileBuffer == nil { throw AudioError.bufferAllocationFailed }
         var delivered = 0
@@ -175,7 +177,7 @@ final class SourceReader {
                 let count = AVAudioFrameCount(min(Int(buffer.frameCapacity), remaining))
                 if let fileBuffer {
                     try input.read(into: fileBuffer, frameCount: count)
-                    Self.map(fileBuffer, into: buffer)
+                    Self.map(fileBuffer, into: buffer, channels: channelMap)
                 } else {
                     try input.read(into: buffer, frameCount: count)
                 }
@@ -243,21 +245,77 @@ final class SourceReader {
         try pad(remaining, buffer: buffer, body)
     }
 
+    /// For each channel of `target`, the channel of `source` that goes into it, or nil for silence. Channels
+    /// are matched by their place in the layouts (a 5.1 file may put the centre first), so a stereo file's
+    /// left channel lands on the left speaker. A mono file goes to the left and right speakers, or to every
+    /// channel when the target has neither. Channels without a layout are matched in order.
+    static func channelMap(from source: AVAudioFormat, to target: AVAudioFormat) -> [Int?] {
+        let sourceLabels = labels(of: source), targetLabels = labels(of: target)
+        let sourceCount = Int(source.channelCount)
+        if sourceCount == 1 {
+            let speakers: Set<AudioChannelLabel> = [kAudioChannelLabel_Left, kAudioChannelLabel_Right]
+            let hasSpeakers = targetLabels.contains { speakers.contains($0) }
+            return targetLabels.map { !hasSpeakers || speakers.contains($0) ? 0 : nil }
+        }
+        let byLabel = targetLabels.map { label in sourceLabels.firstIndex(of: label) }
+        // Layouts that share no labels (e.g. discrete channels) are matched in order
+        if byLabel.allSatisfy({ $0 == nil }) {
+            return targetLabels.indices.map { $0 < sourceCount ? $0 : nil }
+        }
+        return byLabel
+    }
+
+    /// The label of each channel of `format`. Mono and stereo formats without a layout are taken as mono
+    /// and left/right; a layout that cannot be read gives discrete channels.
+    private static func labels(of format: AVAudioFormat) -> [AudioChannelLabel] {
+        let count = Int(format.channelCount)
+        let labels = layoutLabels(of: format)
+        return labels.count == count ? labels : (0..<count).map { kAudioChannelLabel_Discrete_0 + AudioChannelLabel($0) }
+    }
+
+    private static func layoutLabels(of format: AVAudioFormat) -> [AudioChannelLabel] {
+        let count = Int(format.channelCount)
+        guard let layout = format.channelLayout else {
+            return count == 1 ? [kAudioChannelLabel_Mono]
+                : count == 2 ? [kAudioChannelLabel_Left, kAudioChannelLabel_Right]
+                : (0..<count).map { kAudioChannelLabel_Discrete_0 + AudioChannelLabel($0) }
+        }
+        var tag = layout.layoutTag
+        var size: UInt32 = 0
+        // Expand a layout given by its tag into one channel description per channel
+        guard tag != kAudioChannelLayoutTag_UseChannelDescriptions,
+              AudioFormatGetPropertyInfo(kAudioFormatProperty_ChannelLayoutForTag, UInt32(MemoryLayout.size(ofValue: tag)),
+                                         &tag, &size) == noErr
+        else {
+            return descriptions(layout.layout).prefix(count).map(\.mChannelLabel)
+        }
+        let raw = UnsafeMutableRawPointer.allocate(byteCount: Int(size), alignment: MemoryLayout<AudioChannelLayout>.alignment)
+        defer { raw.deallocate() }
+        guard AudioFormatGetProperty(kAudioFormatProperty_ChannelLayoutForTag, UInt32(MemoryLayout.size(ofValue: tag)),
+                                     &tag, &size, raw) == noErr
+        else { return (0..<count).map { kAudioChannelLabel_Discrete_0 + AudioChannelLabel($0) } }
+        return descriptions(raw.assumingMemoryBound(to: AudioChannelLayout.self)).prefix(count).map(\.mChannelLabel)
+    }
+
+    private static func descriptions(_ layout: UnsafePointer<AudioChannelLayout>) -> [AudioChannelDescription] {
+        let count = Int(layout.pointee.mNumberChannelDescriptions)
+        let offset = MemoryLayout<AudioChannelLayout>.offset(of: \.mChannelDescriptions)!
+        let base = (UnsafeRawPointer(layout) + offset).assumingMemoryBound(to: AudioChannelDescription.self)
+        return (0..<count).map { base[$0] }
+    }
+
     /// Copies a file's samples into a buffer of the processing format, exactly: Int32 samples are widened
-    /// to Float64 when the target is Float64, a mono file goes to every channel, and channels the file
-    /// does not have are silent.
-    private static func map(_ source: AVAudioPCMBuffer, into target: AVAudioPCMBuffer) {
+    /// to Float64 when the target is Float64, and channels go where `channels` (see channelMap) says.
+    private static func map(_ source: AVAudioPCMBuffer, into target: AVAudioPCMBuffer, channels: [Int?]) {
         let frames = Int(source.frameLength)
         target.frameLength = source.frameLength
         let from = UnsafeMutableAudioBufferListPointer(source.mutableAudioBufferList)
         let to = UnsafeMutableAudioBufferListPointer(target.mutableAudioBufferList)
-        let sourceChannels = Int(source.format.channelCount)
         let widens = source.format.commonFormat == .pcmFormatInt32 && target.format.commonFormat == .pcmFormatFloat64
         for channel in 0..<Int(target.format.channelCount) {
             guard let out = to[channel].mData else { continue }
             let bytes = Int(to[channel].mDataByteSize)
-            let input = sourceChannels == 1 ? 0 : channel
-            guard input < sourceChannels, let data = from[input].mData else {
+            guard channel < channels.count, let input = channels[channel], let data = from[input].mData else {
                 memset(out, 0, bytes)
                 continue
             }
