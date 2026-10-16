@@ -90,8 +90,12 @@ public struct AudioSource: Sendable, Equatable {
     /// The supported audio files directly inside `folder` (not in subfolders), in the order Finder lists them
     public static func audioFiles(in folder: URL) throws -> [URL] {
         try FileManager.default
-            .contentsOfDirectory(at: folder, includingPropertiesForKeys: nil, options: [.skipsHiddenFiles])
-            .filter { supportedExtensions.contains($0.pathExtension.lowercased()) }
+            .contentsOfDirectory(at: folder, includingPropertiesForKeys: [.isRegularFileKey], options: [.skipsHiddenFiles])
+            // A folder can be named like an audio file ("archive.wav")
+            .filter {
+                supportedExtensions.contains($0.pathExtension.lowercased())
+                    && (try? $0.resourceValues(forKeys: [.isRegularFileKey]).isRegularFile) == true
+            }
             .sorted { $0.lastPathComponent.localizedStandardCompare($1.lastPathComponent) == .orderedAscending }
     }
 }
@@ -339,6 +343,8 @@ final class SourceReader {
     private func pad(_ frames: Int, buffer: AVAudioPCMBuffer, _ body: (AVAudioPCMBuffer) throws -> Void) throws {
         var remaining = frames
         while remaining > 0 {
+            // A file much shorter than reported can leave a lot of silence to write
+            try Task.checkCancellation()
             let n = min(Int(buffer.frameCapacity), remaining)
             buffer.frameLength = AVAudioFrameCount(n)
             for audioBuffer in UnsafeMutableAudioBufferListPointer(buffer.mutableAudioBufferList) {

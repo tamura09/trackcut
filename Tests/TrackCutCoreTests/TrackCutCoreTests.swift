@@ -578,6 +578,8 @@ func aacLimitsTheSampleRateTo48kHz(source: Double, expected: Double) async throw
         try Data().write(to: dir.appendingPathComponent(name))
     }
     try FileManager.default.createDirectory(at: dir.appendingPathComponent("sub"), withIntermediateDirectories: true)
+    // PR #9 review: a folder named like an audio file was listed
+    try FileManager.default.createDirectory(at: dir.appendingPathComponent("archive.wav"), withIntermediateDirectories: true)
     #expect(try AudioSource.audioFiles(in: dir).map(\.lastPathComponent) == ["1 One.m4a", "2 Two.flac", "10 Ten.wav"])
 }
 
@@ -1046,4 +1048,21 @@ private func writeMonoWAV(in dir: URL, name: String, bits: Int, isFloat: Bool,
                                         tolerance: 0.1) { _ in Track(start: 0) }
     #expect(result.map(\.title) == ["On", "A", "Near"])
     #expect(result.map(\.start) == [0, 10, 19.9])
+}
+
+/// PR #9 review: the silence written for a file shorter than reported could not be cancelled
+@Test func paddingWithSilenceCanBeCancelled() async throws {
+    let dir = try makeTempDir()
+    let real = try AudioSource(url: try makeTestWAV(in: dir))
+    let file = real.files[0]
+    let extra: AVAudioFramePosition = 100_000_000
+    let claimed = AudioSource.File(url: file.url, info: file.info, length: file.length + extra, startFrame: 0,
+                                   frameCount: file.frameCount + extra)
+    let source = AudioSource(files: [claimed], sampleRate: real.sampleRate, channelCount: real.channelCount)
+    let task = Task {
+        withUnsafeCurrentTask { $0?.cancel() }
+        // Entirely past the file's real end: only silence
+        try SourceReader(source: source, commonFormat: .pcmFormatFloat32).read(file.length..<(file.length + extra)) { _ in }
+    }
+    await #expect(throws: CancellationError.self) { try await task.value }
 }
