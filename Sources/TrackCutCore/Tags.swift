@@ -1,7 +1,7 @@
 import AVFoundation
 
 /// Tags to write or read. Empty strings and nil values are not written.
-public struct AudioTags: Sendable, Equatable {
+public struct AudioTags: Sendable, Equatable, Codable {
     public var title = ""
     public var artist = ""
     public var album = ""

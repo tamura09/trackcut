@@ -33,12 +33,13 @@ struct TrackListView: View {
                                 .labelsHidden()
                                 .help("Include in export (E)")
                                 .frame(width: 44)
-                            Text(String(format: "%02d", i + 1))
+                            // The number the track is exported under
+                            Text(editor.exportNumber(ofTrackAt: i).map { String(format: "%02d", $0) } ?? "–")
                                 .monospacedDigit()
                                 .foregroundStyle(.secondary)
                                 .frame(width: 24, alignment: .trailing)
                             // Not localized: it shows the name the track is exported under
-                            TextField(String("Track \(i + 1)"), text: editor.textBinding(.track(track.id, \.title)))
+                            TextField(editor.defaultTitle(at: i), text: editor.textBinding(.track(track.id, \.title)))
                                 .textFieldStyle(.plain)
                             TextField(editor.albumTags.artist.isEmpty ? String(localized: "Artist") : editor.albumTags.artist,
                                       text: editor.textBinding(.track(track.id, \.artist)))

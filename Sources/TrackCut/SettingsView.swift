@@ -54,17 +54,13 @@ final class LanguageSettings: ObservableObject {
     /// Only the app bundle can be reopened; a binary started with `swift run` cannot
     var canRelaunch: Bool { Bundle.main.bundleURL.pathExtension == "app" }
 
-    /// Quits and reopens the app once this process has exited, after a confirmation when a file is open
+    /// Quits and reopens the app once this process has exited. Only unsaved changes are asked about (save,
+    /// don't save or cancel); work without them, such as a project just saved or a file not edited, is
+    /// closed without asking, since nothing in it is lost.
     func relaunch(closing editor: EditorModel) {
-        guard canRelaunch else { return }
-        if editor.peaks != nil {
-            let alert = NSAlert()
-            alert.messageText = String(localized: "Relaunch TrackCut now?")
-            alert.informativeText = String(localized: "The open file is closed, and its split points are not kept.")
-            alert.addButton(withTitle: String(localized: "Relaunch"))
-            alert.addButton(withTitle: String(localized: "Cancel"))
-            guard alert.runModal() == .alertFirstButtonReturn else { return }
-        }
+        // Ask about unsaved changes before anything is started: the script below reopens the app whenever it
+        // next quits, so a relaunch the user cancels must not leave it waiting
+        guard canRelaunch, editor.confirmDiscardingChanges() else { return }
         let reopen = Process()
         reopen.executableURL = URL(fileURLWithPath: "/bin/sh")
         reopen.arguments = ["-c", "while kill -0 \(getpid()) 2>/dev/null; do sleep 0.1; done; open \"$0\"",
@@ -75,6 +71,8 @@ final class LanguageSettings: ObservableObject {
             editor.errorMessage = error.localizedDescription
             return
         }
+        // The changes were dealt with above, so quitting does not ask again
+        editor.quitsWithoutAsking = true
         NSApp.terminate(nil)
     }
 }
