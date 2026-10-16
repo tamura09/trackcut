@@ -90,11 +90,12 @@ public struct AudioSource: Sendable, Equatable {
     /// The supported audio files directly inside `folder` (not in subfolders), in the order Finder lists them
     public static func audioFiles(in folder: URL) throws -> [URL] {
         try FileManager.default
-            .contentsOfDirectory(at: folder, includingPropertiesForKeys: [.isRegularFileKey], options: [.skipsHiddenFiles])
-            // A folder can be named like an audio file ("archive.wav")
+            .contentsOfDirectory(at: folder, includingPropertiesForKeys: nil, options: [.skipsHiddenFiles])
+            // A folder can be named like an audio file ("archive.wav"). Judged on where a symbolic link points,
+            // so a link to an audio file is kept.
             .filter {
                 supportedExtensions.contains($0.pathExtension.lowercased())
-                    && (try? $0.resourceValues(forKeys: [.isRegularFileKey]).isRegularFile) == true
+                    && (try? $0.resolvingSymlinksInPath().resourceValues(forKeys: [.isDirectoryKey]).isDirectory) != true
             }
             .sorted { $0.lastPathComponent.localizedStandardCompare($1.lastPathComponent) == .orderedAscending }
     }

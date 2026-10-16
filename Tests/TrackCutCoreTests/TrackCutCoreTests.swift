@@ -580,7 +580,11 @@ func aacLimitsTheSampleRateTo48kHz(source: Double, expected: Double) async throw
     try FileManager.default.createDirectory(at: dir.appendingPathComponent("sub"), withIntermediateDirectories: true)
     // PR #9 review: a folder named like an audio file was listed
     try FileManager.default.createDirectory(at: dir.appendingPathComponent("archive.wav"), withIntermediateDirectories: true)
-    #expect(try AudioSource.audioFiles(in: dir).map(\.lastPathComponent) == ["1 One.m4a", "2 Two.flac", "10 Ten.wav"])
+    // but a link to an audio file is one
+    try FileManager.default.createSymbolicLink(at: dir.appendingPathComponent("3 Link.wav"),
+                                               withDestinationURL: dir.appendingPathComponent("10 Ten.wav"))
+    #expect(try AudioSource.audioFiles(in: dir).map(\.lastPathComponent)
+            == ["1 One.m4a", "2 Two.flac", "3 Link.wav", "10 Ten.wav"])
 }
 
 @Test func joinedFilesAreReadAsOneTimelineBitExact() async throws {
