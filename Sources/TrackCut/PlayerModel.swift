@@ -71,6 +71,10 @@ final class PlayerModel: ObservableObject {
         observation?.invalidate()
     }
 
+    /// Whether the player itself has been asked to play, for tests: on a machine without an audio device its
+    /// time need not move
+    var isPlayerPlaying: Bool { (player?.rate ?? 0) > 0 }
+
     /// Whether the loaded source can be played (see load)
     var isReady: Bool { player != nil }
 

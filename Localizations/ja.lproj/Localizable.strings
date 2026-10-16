@@ -88,6 +88,7 @@
 "Add files or folders after the selected file" = "選択中のファイルの後にファイルやフォルダを追加";
 "Choose audio files or folders to add after the current ones" = "末尾に追加するオーディオファイルかフォルダを選択してください";
 "Analyzing Added Files…" = "追加したファイルを解析中…";
+"Wait until the added files are analyzed, then save again." = "追加したファイルの解析が終わってから、もう一度保存してください。";
 "The files changed in the meantime. Arrange them again." = "その間にファイル構成が変わりました。もう一度整理してください。";
 
 /* Fade curves */

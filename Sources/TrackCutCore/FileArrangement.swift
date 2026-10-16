@@ -20,10 +20,11 @@ public enum FileArrangement {
         for j in oldStarts.indices.dropFirst() {
             if let p = order.firstIndex(of: j), p > 0, order[p - 1] == j - 1 { continue }
             let boundary = oldStarts[j]
-            // The track at 0 stays there, even next to a file shorter than the tolerance
-            if let i = tracks.indices.first(where: {
+            // The track closest to the boundary is moved onto it (none at all when one is on it already). The
+            // track at 0 stays there, even next to a file shorter than the tolerance.
+            if let i = tracks.indices.filter({
                 abs(tracks[$0].start - boundary) <= tolerance && ($0 > 0 || tracks[$0].start == boundary)
-            }) {
+            }).min(by: { abs(tracks[$0].start - boundary) < abs(tracks[$1].start - boundary) }) {
                 tracks[i].start = boundary
                 continue
             }

@@ -271,8 +271,12 @@ extension AppTests {
             undo.groupsByEvent = true
             editor.arrangeFiles([.existing(0), .added(files[0]), .added(files[1])], of: editor.source!)
             #expect(editor.addingProgress != nil)
-            // Nothing else can be arranged until the added files are in
+            // Nothing else can be arranged until the added files are in, and they count as an unsaved change
+            // that cannot be saved yet (the project would not have them)
             #expect(!editor.canArrangeFiles)
+            #expect(editor.hasUnsavedChanges)
+            #expect(!editor.writeProject(to: folder.appendingPathComponent("Early.trackcut")))
+            editor.errorMessage = nil
             while editor.addingProgress != nil { try await Task.sleep(for: .milliseconds(10)) }
             try await nextRunLoopPass()
             undo.groupsByEvent = false
@@ -358,9 +362,8 @@ extension AppTests {
             #expect(!player.isReady)
             let deadline = Date().addingTimeInterval(10)
             while !player.isReady, Date() < deadline { try await Task.sleep(for: .milliseconds(10)) }
-            try await Task.sleep(for: .milliseconds(300))
             #expect(player.isPlaying)
-            #expect(player.currentTime > 0)
+            #expect(player.isPlayerPlaying)
             player.pause()
 
             // A second press while it is being prepared cancels the request
@@ -368,9 +371,8 @@ extension AppTests {
             player.toggle()
             player.toggle()
             while !player.isReady, Date() < deadline { try await Task.sleep(for: .milliseconds(10)) }
-            try await Task.sleep(for: .milliseconds(100))
             #expect(!player.isPlaying)
-            #expect(player.currentTime == 0)
+            #expect(!player.isPlayerPlaying)
         }
 
         @Test func aWindowShowsUnsavedChangesWhenItIsSet() async throws {

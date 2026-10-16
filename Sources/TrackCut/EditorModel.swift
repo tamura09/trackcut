@@ -496,6 +496,8 @@ final class EditorModel: ObservableObject {
     /// Whether the work differs from the project as last saved or opened (or from the audio files as
     /// opened, when they have not been saved as a project yet)
     var hasUnsavedChanges: Bool {
+        // Files being added are a change that is not in the tracks yet
+        if addingProgress != nil { return true }
         guard let savedState, peaks != nil else { return false }
         return savedState != editState
     }
@@ -555,6 +557,11 @@ final class EditorModel: ObservableObject {
 
     func writeProject(to url: URL) -> Bool {
         guard let source else { return false }
+        // The project would not have the files being added, yet would count as saved
+        guard addingProgress == nil else {
+            errorMessage = String(localized: "Wait until the added files are analyzed, then save again.")
+            return false
+        }
         do {
             try Project(sources: source.urls, savedAt: url, album: albumTags, tracks: tracks).write(to: url)
         } catch {

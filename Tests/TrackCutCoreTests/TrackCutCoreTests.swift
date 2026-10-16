@@ -1037,3 +1037,13 @@ private func writeMonoWAV(in dir: URL, name: String, bits: Int, isFloat: Bool,
     let tracks = [Track(start: 0, title: "A"), Track(start: 0.4, title: "B"), Track(start: 0.5, title: "C")]
     #expect(tracks.fitted(to: 0.6, minLength: 0.1).map(\.title) == ["A", "B", "C"])
 }
+
+/// PR #9 review: a split just before a boundary was moved onto it although one was on it already, and the
+/// track of the one on it was then dropped as too short
+@Test func aSplitOnTheBoundaryIsPreferred() {
+    let tracks = [Track(start: 0, title: "A"), Track(start: 9.9, title: "Near"), Track(start: 10, title: "On")]
+    let result = FileArrangement.tracks(tracks, oldStarts: [0, 10], order: [1, 0], newStarts: [0, 10],
+                                        tolerance: 0.1) { _ in Track(start: 0) }
+    #expect(result.map(\.title) == ["On", "A", "Near"])
+    #expect(result.map(\.start) == [0, 10, 19.9])
+}
